@@ -9,12 +9,19 @@ dotenv.config();
 const registerUser = async (req, res) => {
 
     const newUser = User({
-        name: req.body.name,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        userName: req.body.userName,
         email: req.body.email,
         password: CryptoJs.AES.encrypt(
             req.body.password,
             process.env.PASS
-        ).toString()
+        ).toString() ,
+        phoneNumber: req.body.phoneNumber,
+        bloodGroup : req.body.bloodGroup, 
+        dateofBirth: req.body.dateofBirth ,
+        roleId : req.body.roleId, 
+        isActive: req.body.isActive
     });
     try {
 
@@ -48,7 +55,7 @@ const loginUser = async (req, res) => {
 
         const { password, ...info } = user._doc;
         const accessToken = jwt.sign(
-            { id: user._id, role: user.role },
+            { userId: user._id, roleId: user.roleId },
             process.env.JWT_SEC,
             { expiresIn: "5d" }
         ) ; 
