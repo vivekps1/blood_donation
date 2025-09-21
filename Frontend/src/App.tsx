@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { loginUser, registerUser } from './utils/axios'; // Import the login and register APIs
-import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -9,7 +8,7 @@ import DonorManagement from './components/DonorManagement';
 import DonationRequests from './components/DonationRequests';
 import NotificationCenter from './components/NotificationCenter';
 import Reports from './components/Reports';
-import RegisterUser from './components/RegisterUser';
+import AuthWrapper from './components/AuthWrapper';
 
 export interface LoginProps {
   onLogin: (credentials: any) => Promise<boolean>;
@@ -47,10 +46,14 @@ function App() {
     }
   };
 
-  if (!currentUser && currentPage !== 'register') {
-    return <Login onLogin={handleLogin} setCurrentPage={setCurrentPage} />;
-  } else if (currentPage === 'register') {
-    return <RegisterUser onRegister={handleRegister} />;
+  if (!currentUser) {
+    return (
+      <AuthWrapper
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+        setCurrentPage={setCurrentPage}
+      />
+    );
   }
 
   const renderContent = () => {
