@@ -47,28 +47,28 @@ function App() {
     }
   };
 
-  if (!currentUser) {
-    return <Login onLogin={handleLogin} setCurrentPage = {setCurrentPage} />;
+  if (!currentUser && currentPage !== 'register') {
+    return <Login onLogin={handleLogin} setCurrentPage={setCurrentPage} />;
+  } else if (currentPage === 'register') {
+    return <RegisterUser onRegister={handleRegister} />;
   }
 
   const renderContent = () => {
     switch (currentPage) {
       case 'users':
-        return <UserManagement userRole={currentUser.role} />;
+        return <UserManagement userRole={currentUser.userRole} />;
       case 'donors':
-        return <DonorManagement userRole={currentUser.role} />;
+        return <DonorManagement userRole={currentUser.userRole} />;
       case 'requests':
-        return <DonationRequests userRole={currentUser.role} />;
+        return <DonationRequests userRole={currentUser.userRole} />;
       case 'notifications':
-        return <NotificationCenter userRole={currentUser.role} />;
+        return <NotificationCenter userRole={currentUser.userRole} />;
       case 'reports':
-        return <Reports userRole={currentUser.role} />;
-      case 'register':
-        return <RegisterUser onRegister={handleRegister} />;
-      case 'dashboard':
-        return <Dashboard userRole={currentUser.role} />;
+        return <Reports userRole={currentUser.userRole} />;
+     case 'dashboard':
+        return <Dashboard userRole={currentUser.userRole} />;
       default:
-        return <Dashboard userRole={currentUser.role} />;
+        return <Dashboard userRole={currentUser.userRole} />;
     }
   };
 
@@ -80,7 +80,7 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
-        userRole={currentUser.role}
+        userRole={currentUser.userRole} 
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header

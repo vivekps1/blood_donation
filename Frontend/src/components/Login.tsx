@@ -1,4 +1,4 @@
-import  React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Lock, User, Activity } from 'lucide-react';
 
 interface LoginProps {
@@ -87,6 +87,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
               Sign In
             </button>
           </form>
+
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setCurrentPage('register')}
+              className="text-red-600 hover:underline"
+            >
+              Register
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -94,4 +103,3 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
 };
 
 export default Login;
- 

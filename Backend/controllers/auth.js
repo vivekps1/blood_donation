@@ -2,6 +2,7 @@ const CryptoJs = require("crypto-js");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const dotenv = require("dotenv");
+const Roles = require("../models/Roles");
 dotenv.config();
 
 // Register user
@@ -53,14 +54,16 @@ const loginUser = async (req, res) => {
             return res.status(401).json("Invalid Username or Password")
         }
 
+        const role = await Roles.findOne({ roleId: user.roleId });
+
         const { password, ...info } = user._doc;
         const accessToken = jwt.sign(
             { userId: user._id, roleId: user.roleId },
             process.env.JWT_SEC,
             { expiresIn: "5d" }
         ) ; 
-
-        res.status(200).json({...info, accessToken})
+        info.userRole = role.userRole ;
+        res.status(200).json({...info, accessToken })
 
     } catch (error) {
         res.status(500).json(error) ;

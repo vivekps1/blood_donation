@@ -1,8 +1,8 @@
 const mongoose = require("mongoose") ;
 
 const RolesSchema = mongoose.Schema({
-    roldId : {type:Number}, 
-    roleName : {type:String, default:"user"}, 
+    roleId : {type:Number}, 
+    userRole : {type:String, default:"donor"}, 
     manageUsers: {type:Boolean, default:false}, 
     manageHospitals: {type:Boolean,default:false}, 
     manageDonationRequests: {type:Boolean, default:false}, 

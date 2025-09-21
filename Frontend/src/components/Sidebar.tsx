@@ -22,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, setCurr
  
 
    const filteredItems = menuItems.filter(item => {
+    console.log(userRole);
     if (userRole === 'donor') return ['dashboard', 'requests', 'notifications'].includes(item.id);
     return true;
   });
