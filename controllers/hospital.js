@@ -50,7 +50,11 @@ const updateHospital = async (req, res) => {
 const getOneHospital = async (req, res) => {
     try{
         const hospital = await Hospital.findById(req.params.id) ;
-        res.status(200).json(hospital)
+        if(!hospital){
+            res.status(404).json("The hospital is not registered on our database")
+        }else{
+            res.status(200).json(hospital)
+        }
     }catch(error){
         res.status(500).json(error)
     }
@@ -60,7 +64,7 @@ const getOneHospital = async (req, res) => {
 
 const deleteHospital = async (req, res) =>{
     try{
-        const hospital = await Hospital.findById(req.params.id); 
+        const hospital = await Hospital.findByIdAndDelete(req.params.id); 
         res.status(201).json("Deleted hospital successfully") ;
     }catch(error){
         res.status(500).json(error)

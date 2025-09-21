@@ -15,7 +15,7 @@ router.get("/", verifyToken, getAllHospitals) ;
 router.put("/:id", verifyTokenAndAuthorization, updateHospital) ;
 
 //Delete Hospitals 
-router.delete("/", verifyTokenAndAuthorization,deleteHospital) ;
+router.delete("/:id", verifyTokenAndAuthorization,deleteHospital) ;
 
 //Get one Hospital 
 router.get("/:id",verifyToken ,getOneHospital) ;
