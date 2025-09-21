@@ -1,0 +1,57 @@
+export  interface User {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  phone_number: string;
+  password: string;
+  blood_group: string;
+  role: 'donor' | 'admin';
+  date_of_birth: string;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface DonationRequest {
+  id: string;
+  hospital_name: string;
+  blood_type: string;
+  units_needed: number;
+  urgency: 'critical' | 'urgent' | 'routine';
+  status: 'pending' | 'approved' | 'fulfilled' | 'cancelled';
+  request_date: string;
+  required_by: string;
+  contact_person: string;
+  phone: string;
+  location: string;
+  description?: string;
+  created_by: string;
+  responses: number;
+}
+
+export interface Donor {
+  user_id: string;
+  last_donation_date?: string;
+  total_donations: number;
+  is_eligible: boolean;
+  medical_conditions?: string;
+  weight: number;
+  location: string;
+  notification_preferences: {
+    sms: boolean;
+    email: boolean;
+  };
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: 'donation_request' | 'eligibility' | 'system';
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  data?: any;
+}
+ 
