@@ -4,13 +4,14 @@ const DonorSchema = mongoose.Schema({
     name:{type:String, require:true}, 
     email:{type:String, require:true}, 
     address:{type:String},
-    tel:{type:Number}, 
-    bloodgroup:{type:String}, 
-    weight:{type:String}, 
-    date: {type:String}, 
-    diseases: {type:String}, 
-    age: {type:Number}, 
-    bloodpressure:{type:Number}, 
+    phoneNumber: {type:String, require:true}, 
+    bloodGroup:{type:String, require:true}, 
+    height:{type:String, require:true},
+    weight:{type:String, require:true}, 
+    date: {type:String, require:true}, 
+    diseases: {type:String, default:"No"}, 
+    age: {type:Number, require:true}, 
+    bloodPressure:{type:Number, require:true}, 
     status:{type:Number, default:0}
 })
 

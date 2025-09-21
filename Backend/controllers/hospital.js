@@ -50,6 +50,9 @@ const updateHospital = async (req, res) => {
 const getOneHospital = async (req, res) => {
     try{
         const hospital = await Hospital.findById(req.params.id) ;
+        if (!hospital) {
+            return res.status(404).json({ message: "Hospital not found" });
+        }
         res.status(200).json(hospital)
     }catch(error){
         res.status(500).json(error)
@@ -60,8 +63,11 @@ const getOneHospital = async (req, res) => {
 
 const deleteHospital = async (req, res) =>{
     try{
-        const hospital = await Hospital.findById(req.params.id); 
-        res.status(201).json("Deleted hospital successfully") ;
+        const hospital = await Hospital.findByIdAndDelete(req.params.id); 
+         if (!hospital) {
+            return res.status(404).json({ message: "Hospital not found" });
+        }
+        res.status(200).json({"message" :"Deleted hospital successfully", hospital });
     }catch(error){
         res.status(500).json(error)
     }

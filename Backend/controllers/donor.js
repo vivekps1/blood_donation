@@ -2,15 +2,14 @@ const Donor = require("../models/Donor") ;
 
 // Create Donor Functionality 
 
-const createDonor = async (req, res) =>{
-try{
-    const newDonor = Donor(req,body) ; 
-    const donor = await newDonor.save() ;
-    res.status(201).json(donor)
-}catch(error){
-    res.status(500).json(error) ;
-}
-
+const createDonor = async (req, res) => {
+  try {
+    const newDonor = new Donor(req.body);
+    const donor = await newDonor.save();
+    return res.status(201).json(donor); 
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 }
 
 //Get all Donors 
@@ -45,6 +44,9 @@ const updateDonor = async (req, res) => {
 const getOneDonor = async (req, res) => {
     try{
         const donor = await Donor.findById(req.params.id) ;
+        if (!donor) {
+            return res.status(404).json({ message: "Donor not found" });
+        }
         res.status(200).json(donor)
     }catch(error){
         res.status(500).json(error)
@@ -55,8 +57,11 @@ const getOneDonor = async (req, res) => {
 
 const deleteDonor = async (req, res) =>{
     try{
-        const donor = await Donor.findById(req.params.id); 
-        res.status(201).json("Deleted Donor successfully") ;
+        const donor = await Donor.findByIdAndDelete(req.params.id); 
+        if (!donor) {
+            return res.status(404).json({ message: "Donor not found" });
+        }
+        res.status(200).json({"message" :"Deleted Donor successfully", donor });
     }catch(error){
         res.status(500).json(error)
     }
