@@ -3,20 +3,22 @@ import { Lock, User, Activity } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (user: any) => void;
+  setCurrentPage: (page: any) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '', role: 'donor' });
 
   const userTypes = [
     { id: 'donor', name: 'Donor', icon: User },
     { id: 'hospital', name: 'Hospital Staff', icon: Activity },
     { id: 'admin', name: 'Administrator', icon: Lock },
+    {id: 'register', name:'Register', icon:User}
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin({ username: credentials.username, role: credentials.role });
+    onLogin({ email: credentials.username, role: credentials.role, password: credentials.password });
   };
 
   return (
@@ -37,7 +39,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <button
                   key={type.id}
                   type="button"
-                  onClick={() => setCredentials({ ...credentials, role: type.id })}
+                  onClick={() => {
+                    if (type.id === 'register') {
+                      setCurrentPage('register');
+                    } else {
+                      setCredentials({ ...credentials, role: type.id });
+                    }
+                  }}
                   className={`p-3 rounded-lg border-2 transition-all ${
                     credentials.role === type.id
                       ? 'border-red-500 bg-red-50 text-red-700'
