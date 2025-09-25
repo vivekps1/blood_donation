@@ -7,7 +7,7 @@ const DonationHistorySchema = mongoose.Schema({
     hospitalId: {type:String}, 
     requestId: {type:String}, 
     reportId: {type:String}, 
-    donationDate: {type:String}, 
+    donationDate: { type: Date, required: true }, 
     donatedUnits:{type:Number}, 
     donationType: {type:String}, 
     status: {type:String}, 

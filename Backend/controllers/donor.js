@@ -15,11 +15,27 @@ const createDonor = async (req, res) => {
 //Get all Donors 
 
 const getAlldonors = async (req, res) => {
-    try{
-        const donors = await Donor.find().sort({createdAt:-1}) ;
-        res.status(200).json(donors)
-    }catch(error){
-        res.status(500).json(error)
+    try {
+        // Get pagination params from query
+        let { page = 1, size = 10 } = req.query;
+        page = parseInt(page);
+        size = parseInt(size);
+
+        const total = await Donor.countDocuments();
+        const donors = await Donor.find()
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * size)
+            .limit(size);
+
+        res.status(200).json({
+            donors,
+            total,
+            page,
+            size,
+            totalPages: Math.ceil(total / size)
+        });
+    } catch (error) {
+        res.status(500).json(error);
     }
 }
 
@@ -69,22 +85,26 @@ const deleteDonor = async (req, res) =>{
 
 //Stats 
 
-const getDonorsStats = async (req, res) =>{
-    try{
+const DonationHistory = require("../models/DonationHistory");
+const getDonorsStats = async (req, res) => {
+    try {
+        // Total donors
+        const totalDonors = await Donor.countDocuments();
+        // // Eligible donors (status: 1)
+        // const eligibleDonors = await Donor.countDocuments({ status: 1 });
+        // // Ineligible donors (status: 0)
+        // const ineligibleDonors = await Donor.countDocuments({ status: 0 });
+        // // Total successful donations
+        // const totalSuccessDonations = await DonationHistory.countDocuments({ status: "Success" });
 
-        const stats = await Donor.aggregate([
-            {
-                $group:{
-                    _id:"$bloodgroup" ,
-                    count: {$sum:1}
-                }
-            }
-        ]) ; 
-        res.status(200).json(stats) ;
-
-    }catch(error){
-        res.status(500).json(error) ; 
-        
+        res.status(200).json({
+            totalDonors,
+            // eligibleDonors,
+            // ineligibleDonors,
+            // totalSuccessDonations
+        });
+    } catch (error) {
+        res.status(500).json(error);
     }
 }
 

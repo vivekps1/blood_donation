@@ -25,50 +25,54 @@ const registerUser = async (req, res) => {
         isActive: req.body.isActive
     });
     try {
-
-        const user = await newUser.save()
-        res.status(201).json(user)
+        const user = await newUser.save();
+        res.status(201).json(user);
     } catch (error) {
-        res.status(500).json(user)
-
+        res.status(500).json({ msg: error.message || error });
     }
 }
 
 //Login User 
 
 const loginUser = async (req, res) => {
-
     try {
-
-        const user = await User.findOne({ email: req.body.email });        
+        const { email, role: payloadRole } = req.body;
+        const user = await User.findOne({ email });
         if (!user) {
-            return res.status(401).json("You have not registered");
+            return res.status(401).json({ msg: "You have not registered" });
         }
         const hashedPassword = CryptoJs.AES.decrypt(
             user.password,
             process.env.PASS
         );
-        const originalPassword = hashedPassword.toString(CryptoJs.enc.Utf8)
-        console.log(req.body.password)
+        const originalPassword = hashedPassword.toString(CryptoJs.enc.Utf8);
         if (originalPassword !== req.body.password) {
-            return res.status(401).json("Invalid Username or Password")
+            return res.status(401).json({ msg: "Invalid Username or Password" });
+        }
+
+        // Fetch roleId for the payload role (ensure roleId exists)
+        const payloadRoleDoc = await Roles.findOne({ userRole: payloadRole, roleId: { $ne: null } });
+        if (!payloadRoleDoc || typeof payloadRoleDoc.roleId === 'undefined') {
+            return res.status(401).json({ msg: "Invalid role specified" });
+        }
+
+        // Check if user's roleId matches the payload roleId
+        if (String(user.roleId) !== String(payloadRoleDoc.roleId)) {
+            return res.status(403).json({ msg: `You're not ${payloadRole}` });
         }
 
         const role = await Roles.findOne({ roleId: user.roleId });
-
         const { password, ...info } = user._doc;
         const accessToken = jwt.sign(
             { userId: user._id, roleId: user.roleId },
             process.env.JWT_SEC,
             { expiresIn: "5d" }
-        ) ; 
-        info.userRole = role.userRole ;
-        res.status(200).json({...info, accessToken })
-
+        );
+        info.userRole = role.userRole;
+        res.status(200).json({ ...info, accessToken });
     } catch (error) {
-        res.status(500).json(error) ;
+        res.status(500).json({ msg: error.message || error });
     }
-
 }; 
 
 module.exports = {loginUser, registerUser}

@@ -31,17 +31,19 @@ export interface DonationRequest {
 }
 
 export interface Donor {
-  user_id: string;
-  last_donation_date?: string;
-  total_donations: number;
-  is_eligible: boolean;
-  medical_conditions?: string;
-  weight: number;
-  location: string;
-  notification_preferences: {
-    sms: boolean;
-    email: boolean;
-  };
+  _id: string;
+  name: string;
+  email: string;
+  address?: string;
+  phoneNumber: string;
+  bloodGroup: string;
+  height: string;
+  weight: string;
+  date: string;
+  diseases?: string;
+  age: number;
+  bloodPressure: number;
+  status: number;
 }
 
 export interface Notification {

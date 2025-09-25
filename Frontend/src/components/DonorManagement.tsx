@@ -1,87 +1,85 @@
-import  React, { useState } from 'react';
-import { Users, Search, Filter, MapPin, Calendar, Activity, Phone, Mail } from 'lucide-react';
-import type { Donor, User } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Users, Search, Filter, MapPin, Phone, Mail } from 'lucide-react';
+import type { Donor } from '../types';
+import { getAllDonors, getDonationHistoryByUser, getDonorsStats, getDonationEntriesStats } from '../utils/axios';
 
-interface DonorManagementProps {
-  userRole: string;
-}
-
-const DonorManagement: React.FC<DonorManagementProps> = ({ userRole }) => {
+const DonorManagement: React.FC = () => {
+  const [donors, setDonors] = useState<Donor[]>([]);
+  const [donorHistories, setDonorHistories] = useState<Record<string, any>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [bloodTypeFilter, setBloodTypeFilter] = useState('all');
   const [eligibilityFilter, setEligibilityFilter] = useState('all');
+  const [appliedFilters, setAppliedFilters] = useState({ bloodType: 'all', eligibility: 'all', search: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  // Stats states
+  const [donorStats, setDonorStats] = useState<{ totalDonors: number; eligibleDonors: number; ineligibleDonors: number; totalSuccessDonations: number } | null>(null);
+  const [donationStats, setDonationStats] = useState<{ eligibleDonors: number; ineligibleDonors: number; totalDonations: number } | null>(null);
 
-  const donors: (Donor & User)[] = [
-    {
-      user_id: '1',
-      first_name: 'John',
-      last_name: 'Smith',
-      username: 'johnsmith',
-      email: 'john@email.com',
-      phone_number: '+1-555-0123',
-      password: '',
-      blood_group: 'O+',
-      role: 'donor',
-      date_of_birth: '1990-05-15',
-      created_at: '2024-01-01',
-      is_active: true,
-      last_donation_date: '2023-10-15',
-      total_donations: 5,
-      is_eligible: true,
-      weight: 70,
-      location: 'New York',
-      notification_preferences: { sms: true, email: true }
-    },
-    {
-      user_id: '2',
-      first_name: 'Sarah',
-      last_name: 'Johnson',
-      username: 'sarahjohnson',
-      email: 'sarah@email.com',
-      phone_number: '+1-555-0124',
-      password: '',
-      blood_group: 'A-',
-      role: 'donor',
-      date_of_birth: '1985-08-22',
-      created_at: '2024-01-05',
-      is_active: true,
-      last_donation_date: '2024-01-10',
-      total_donations: 12,
-      is_eligible: false,
-      weight: 65,
-      location: 'Boston',
-      notification_preferences: { sms: false, email: true }
+  useEffect(() => {
+    const fetchDonors = async () => {
+      try {
+        // Pass page and size to backend
+        const response = await getAllDonors(currentPage, pageSize);
+        const data = response.data as { donors: Donor[]; totalPages?: number };
+        const donorList = data.donors;
+        setDonors(donorList);
+        setTotalPages(data.totalPages || 1);
+        // Fetch donation history for each donor
+        const histories: Record<string, any> = {};
+        await Promise.all(
+          donorList.map(async (donor) => {
+            try {
+              const historyRes = await getDonationHistoryByUser(donor._id);
+              histories[donor._id] = historyRes.data;
+            } catch {
+              histories[donor._id] = null;
+            }
+          })
+        );
+        setDonorHistories(histories);
+      } catch {
+        setDonors([]);
+      }
+    };
+    fetchDonors();
+  }, [currentPage, pageSize]);
+
+  // Fetch donor stats and donation history stats
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const donorStatsRes = await getDonorsStats();
+  setDonorStats(donorStatsRes.data as { totalDonors: number; eligibleDonors: number; ineligibleDonors: number; totalSuccessDonations: number });
+      } catch {
+        setDonorStats(null);
+      }
+      try {
+        const donationStatsRes = await getDonationEntriesStats();
+  setDonationStats(donationStatsRes.data as { eligibleDonors: number; ineligibleDonors: number; totalDonations: number });
+      } catch {
+        setDonationStats(null);
+      }
+    };
+    fetchStats();
+  }, []);
+
+
+  // Use backend pagination, but apply filters on current page
+  const paginatedDonors = donors.filter(donor => {
+    const matchesSearch = appliedFilters.search === '' || `${donor.name}`.toLowerCase().includes(appliedFilters.search.toLowerCase()) || donor.email.toLowerCase().includes(appliedFilters.search.toLowerCase());
+    const matchesBloodType = appliedFilters.bloodType === 'all' || donor.bloodGroup === appliedFilters.bloodType;
+    const history = donorHistories[donor._id];
+    let eligibilityValue = 'N/A';
+    if (history && typeof history === 'object' && typeof history.eligibility === 'string') {
+      eligibilityValue = history.eligibility;
     }
-  ];
-
-  const filteredDonors = donors.filter(donor => {
-    const matchesSearch = `${donor.first_name} ${donor.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         donor.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesBloodType = bloodTypeFilter === 'all' || donor.blood_group === bloodTypeFilter;
-    const matchesEligibility = eligibilityFilter === 'all' || 
-                              (eligibilityFilter === 'eligible' && donor.is_eligible) ||
-                              (eligibilityFilter === 'ineligible' && !donor.is_eligible);
+    const matchesEligibility = appliedFilters.eligibility === 'all' ||
+      (appliedFilters.eligibility === 'eligible' && eligibilityValue === 'eligible') ||
+      (appliedFilters.eligibility === 'ineligible' && eligibilityValue === 'ineligible');
     return matchesSearch && matchesBloodType && matchesEligibility;
   });
-
-  const getEligibilityStatus = (donor: Donor) => {
-    if (!donor.last_donation_date) return { status: 'eligible', message: 'Never donated' };
-    
-    const lastDonation = new Date(donor.last_donation_date);
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-    
-    if (lastDonation < threeMonthsAgo) {
-      return { status: 'eligible', message: 'Eligible to donate' };
-    } else {
-      const nextEligible = new Date(lastDonation);
-      nextEligible.setMonth(nextEligible.getMonth() + 3);
-      return { 
-        status: 'ineligible', 
-        message: `Eligible from ${nextEligible.toDateString()}` 
-      };
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -129,7 +127,13 @@ const DonorManagement: React.FC<DonorManagementProps> = ({ userRole }) => {
             <option value="eligible">Eligible</option>
             <option value="ineligible">Ineligible</option>
           </select>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center">
+          <button
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center"
+            onClick={() => {
+              setAppliedFilters({ bloodType: bloodTypeFilter, eligibility: eligibilityFilter, search: searchTerm });
+              setCurrentPage(1);
+            }}
+          >
             <Filter className="w-4 h-4 mr-2" />
             Apply Filters
           </button>
@@ -138,106 +142,145 @@ const DonorManagement: React.FC<DonorManagementProps> = ({ userRole }) => {
 
       {/* Donors Grid */}
       <div className="grid gap-6">
-        {filteredDonors.map((donor) => {
-          const eligibility = getEligibilityStatus(donor);
-          return (
-            <div key={donor.user_id} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start space-x-4 flex-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    {donor.first_name[0]}{donor.last_name[0]}
+        {paginatedDonors.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">No donors found for selected filters.</div>
+        ) : (
+          paginatedDonors.map((donor) => {
+            const history = donorHistories[donor._id];
+            // Extract donation info
+            let totalDonations = '-';
+            let lastDonationDate = '-';
+            let lastStatus = '-';
+            let eligibility = { status: 'N/A', message: 'N/A' };
+            if (history && typeof history === 'object' && Array.isArray(history.requests) && typeof history.count === 'number') {
+              totalDonations = history.count.toString();
+              eligibility.status = history.eligibility || 'N/A';
+              eligibility.message = history.eligibility || 'N/A';
+              if (history.requests.length > 0) {
+                // Find latest Date
+                const sorted = [...history.requests].sort((a, b) => new Date(b.Date).getTime() - new Date(a.Date).getTime());
+                lastDonationDate = sorted[0].Date ? new Date(sorted[0].Date).toLocaleDateString() : 'N/A';
+                lastStatus = sorted[0].status || 'N/A';
+              } else {
+                lastDonationDate = 'N/A';
+                lastStatus = 'N/A';
+              }
+            }
+            return (
+              <div key={donor._id} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-4 flex-1">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                      {donor.name ? donor.name[0] : ''}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900">
+                          {donor.name}
+                        </h3>
+                        <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+                          {donor.bloodGroup}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          eligibility.status === 'eligible' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {eligibility.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Mail className="w-4 h-4" />
+                          <span className="text-sm">{donor.email}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Phone className="w-4 h-4" />
+                          <span className="text-sm">{donor.phoneNumber}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <MapPin className="w-4 h-4" />
+                          <span className="text-sm">{donor.address}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <p className="text-gray-500">Total Donations</p>
+                          <p className="font-semibold text-blue-600">{totalDonations}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Last Donation</p>
+                          <p className="font-medium">{lastDonationDate}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Weight</p>
+                          <p className="font-medium">{donor.weight} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Last Status</p>
+                          <p className="font-medium">{lastStatus}</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        {donor.first_name} {donor.last_name}
-                      </h3>
-                      <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
-                        {donor.blood_group}
-                      </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        eligibility.status === 'eligible' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {eligibility.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      <div className="flex items-center space-x-2 text-gray-600">
-                        <Mail className="w-4 h-4" />
-                        <span className="text-sm">{donor.email}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-gray-600">
-                        <Phone className="w-4 h-4" />
-                        <span className="text-sm">{donor.phone_number}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-gray-600">
-                        <MapPin className="w-4 h-4" />
-                        <span className="text-sm">{donor.location}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-500">Total Donations</p>
-                        <p className="font-semibold text-blue-600">{donor.total_donations}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Last Donation</p>
-                        <p className="font-medium">
-                          {donor.last_donation_date ? new Date(donor.last_donation_date).toDateString() : 'Never'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Weight</p>
-                        <p className="font-medium">{donor.weight} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Status</p>
-                        <p className="font-medium">{eligibility.message}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex space-x-2">
-                  {eligibility.status === 'eligible' && (
-                    <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
-                      Notify for Donation
+                  <div className="flex space-x-2">
+                    {eligibility.status === 'eligible' && (
+                      <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
+                        Notify for Donation
+                      </button>
+                    )}
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm">
+                      View Profile
                     </button>
-                  )}
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm">
-                    View Profile
-                  </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center space-x-2 mt-6">
+          <button
+            className="px-3 py-1 rounded bg-gray-200"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(currentPage - 1)}
+          >
+            Previous
+          </button>
+          <span className="px-2">Page {currentPage} of {totalPages}</span>
+          <button
+            className="px-3 py-1 rounded bg-gray-200"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(currentPage + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 text-center">
-          <div className="text-2xl font-bold text-blue-600">{donors.length}</div>
+          <div className="text-2xl font-bold text-blue-600">{donorStats ? donorStats.totalDonors : '-'}</div>
           <div className="text-sm text-gray-600">Total Donors</div>
         </div>
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 text-center">
           <div className="text-2xl font-bold text-green-600">
-            {donors.filter(d => d.is_eligible).length}
+            {donorStats && donationStats ? (donorStats.totalDonors - donationStats.ineligibleDonors) : '-'}
           </div>
           <div className="text-sm text-gray-600">Eligible Donors</div>
         </div>
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 text-center">
           <div className="text-2xl font-bold text-red-600">
-            {donors.reduce((sum, d) => sum + d.total_donations, 0)}
+            {donationStats ? donationStats.totalDonations : '-'}
           </div>
           <div className="text-sm text-gray-600">Total Donations</div>
         </div>
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 text-center">
           <div className="text-2xl font-bold text-purple-600">
-            {donors.filter(d => d.notification_preferences.sms && d.notification_preferences.email).length}
+            {/* Placeholder for Active Notifications */}
+            {donorStats ? donorStats.totalDonors : '-'}
           </div>
           <div className="text-sm text-gray-600">Active Notifications</div>
         </div>

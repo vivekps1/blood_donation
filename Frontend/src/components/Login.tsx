@@ -4,25 +4,69 @@ import { Lock, User, Activity } from 'lucide-react';
 interface LoginProps {
   onLogin: (user: any) => void;
   setCurrentPage: (page: any) => void;
+  setShowRegister: (show: boolean) => void;
+  showRegister: boolean;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister, showRegister }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '', role: 'donor' });
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
+  const [loadingError, setLoadingError] = useState(false);
 
   const userTypes = [
     { id: 'donor', name: 'Donor', icon: User },
-    { id: 'hospital', name: 'Hospital Staff', icon: Activity },
-    { id: 'admin', name: 'Administrator', icon: Lock },
-    {id: 'register', name:'Register', icon:User}
+    { id: 'admin', name: 'Administrator', icon: Lock }
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin({ email: credentials.username, role: credentials.role, password: credentials.password });
+    setErrorMsg(null);
+    setShowErrorPopup(false);
+    setLoadingError(false);
+    try {
+      await onLogin({ email: credentials.username, role: credentials.role, password: credentials.password });
+    } catch (err: any) {
+      let msg = 'Login failed';
+      if (err && err.response && err.response.data) {
+        if (err.response.data.msg) {
+          msg = err.response.data.msg;
+        } else {
+          msg = typeof err.response.data === 'string' ? err.response.data : err.response.data.error || 'Login failed';
+        }
+      }
+      setErrorMsg(msg);
+      setShowErrorPopup(true);
+      setLoadingError(true);
+      setTimeout(() => {
+        setShowErrorPopup(false);
+        setLoadingError(false);
+      }, 5000);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4 relative">
+      {/* Error Popup Overlay */}
+      {showErrorPopup && (
+        <div className="fixed inset-0 flex items-center justify-center z-[9999]">
+          <div className="bg-white border border-red-400 rounded-lg shadow-lg p-6 flex flex-col items-center relative min-w-[300px]">
+            <button
+              className="absolute top-2 right-2 text-red-600 hover:text-red-800 text-lg font-bold"
+              onClick={() => { setShowErrorPopup(false); setLoadingError(false); }}
+            >
+              &times;
+            </button>
+            <div className="flex items-center space-x-3">
+              <span className="text-red-600 font-semibold">{errorMsg}</span>
+              {loadingError && (
+                <span className="ml-2 animate-spin inline-block w-5 h-5 border-2 border-red-400 border-t-transparent rounded-full"></span>
+              )}
+            </div>
+            <div className="mt-2 text-xs text-gray-400">This popup will close automatically in 5 seconds.</div>
+          </div>
+        </div>
+      )}
       <div className="max-w-md w-full">
         <div className="bg-white rounded-lg shadow-xl p-8">
           <div className="text-center mb-8">
@@ -34,7 +78,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-3 gap-2 mb-6">
+            <div className="grid grid-cols-2 gap-2 mb-6">
               {userTypes.map((type) => (
                 <button
                   key={type.id}
@@ -86,16 +130,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage }) => {
             >
               Sign In
             </button>
+             <div className="text-center mt-4">
+              <button
+                className="text-red-600 underline"
+                onClick={() => setShowRegister(!showRegister)}
+              >
+                {showRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
+              </button>
+      </div>
           </form>
-
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => setCurrentPage('register')}
-              className="text-red-600 hover:underline"
-            >
-              Register
-            </button>
-          </div>
         </div>
       </div>
     </div>

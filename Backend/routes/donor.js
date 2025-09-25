@@ -17,10 +17,10 @@ router.put("/:id",verifyToken, updateDonor) ;
 //Delete Donors 
 router.delete("/:id", verifyToken, deleteDonor) ;
 
+//Donor stats 
+router.get("/stats", verifyTokenAndAuthorization, getDonorsStats) ;
+
 //Get one Donor 
 router.get("/:id",verifyToken, getOneDonor) ;
-
-//Donor stats 
-router.get("/", verifyTokenAndAuthorization, getDonorsStats) ; 
 
 module.exports= router
