@@ -44,6 +44,11 @@ export interface Donor {
   age: number;
   bloodPressure: number;
   status: number;
+  // Added fields from backend
+  totalDonations?: number;
+  lastDonationDate?: string | null;
+  lastStatus?: string | null;
+  eligibility?: string;
 }
 
 export interface Notification {

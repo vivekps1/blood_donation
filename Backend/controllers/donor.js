@@ -27,15 +27,44 @@ const getAlldonors = async (req, res) => {
             .skip((page - 1) * size)
             .limit(size);
 
+        // For each donor, fetch donation stats
+        const donorsWithStats = await Promise.all(donors.map(async (donor) => {
+            const history = await DonationHistory.find({ userId: donor._id }).sort({ donationDate: -1 });
+            const totalDonations = history.length;
+            let lastDonationDate = null;
+            let lastStatus = null;
+            let eligibility = "eligible";
+            if (history.length > 0) {
+                lastDonationDate = history[0].donationDate || null;
+                lastStatus = history[0].status || null;
+                // Eligibility logic: last successful donation must be >= 30 days ago
+                const latestSuccessEntry = history.find(h => h.status === "Success" && h.donationDate);
+                if (latestSuccessEntry && latestSuccessEntry.donationDate) {
+                    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                    const latestSuccessDate = new Date(latestSuccessEntry.donationDate);
+                    const diffTime = nowIST.getTime() - latestSuccessDate.getTime();
+                    const diffDays = diffTime / (1000 * 3600 * 24);
+                    eligibility = diffDays >= 30 ? "eligible" : "ineligible";
+                }
+            }
+            return {
+                ...donor._doc,
+                totalDonations,
+                lastDonationDate,
+                lastStatus,
+                eligibility
+            };
+        }));
+
         res.status(200).json({
-            donors,
+            donors: donorsWithStats,
             total,
             page,
             size,
             totalPages: Math.ceil(total / size)
         });
     } catch (error) {
-        res.status(500).json(error);
+        res.status(500).json({ msg: error.message || error });
     }
 }
 
@@ -90,21 +119,37 @@ const getDonorsStats = async (req, res) => {
     try {
         // Total donors
         const totalDonors = await Donor.countDocuments();
-        // // Eligible donors (status: 1)
-        // const eligibleDonors = await Donor.countDocuments({ status: 1 });
-        // // Ineligible donors (status: 0)
-        // const ineligibleDonors = await Donor.countDocuments({ status: 0 });
-        // // Total successful donations
-        // const totalSuccessDonations = await DonationHistory.countDocuments({ status: "Success" });
+        // Eligible/ineligible donors based on eligibility logic
+        const allDonors = await Donor.find();
+        let eligibleDonors = 0;
+        let ineligibleDonors = 0;
+        for (const donor of allDonors) {
+            const history = await DonationHistory.find({ userId: donor._id }).sort({ donationDate: -1 });
+            let eligibility = "eligible";
+            if (history.length > 0) {
+                const latestSuccessEntry = history.find(h => h.status === "Success" && h.donationDate);
+                if (latestSuccessEntry && latestSuccessEntry.donationDate) {
+                    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                    const latestSuccessDate = new Date(latestSuccessEntry.donationDate);
+                    const diffTime = nowIST.getTime() - latestSuccessDate.getTime();
+                    const diffDays = diffTime / (1000 * 3600 * 24);
+                    eligibility = diffDays >= 180 ? "eligible" : "ineligible";
+                }
+            }
+            if (eligibility === "eligible") eligibleDonors++;
+            else ineligibleDonors++;
+        }
+        // Total successful donations
+        const totalSuccessDonations = await DonationHistory.countDocuments({ status: "Success" });
 
         res.status(200).json({
             totalDonors,
-            // eligibleDonors,
-            // ineligibleDonors,
-            // totalSuccessDonations
+            eligibleDonors,
+            ineligibleDonors,
+            totalSuccessDonations
         });
     } catch (error) {
-        res.status(500).json(error);
+        res.status(500).json({ msg: error.message || error });
     }
 }
 

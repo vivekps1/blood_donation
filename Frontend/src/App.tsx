@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
+import Cookies from 'js-cookie';
 import { loginUser, registerUser } from './utils/axios'; // Import the login and register APIs
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import UserManagement from './components/UserManagement';
 import DonorManagement from './components/DonorManagement';
 import DonationRequests from './components/DonationRequests';
 import NotificationCenter from './components/NotificationCenter';
 import Reports from './components/Reports';
 import AuthWrapper from './components/AuthWrapper';
+import { HospitalManagement } from './components/HospitalManagement';
 
 export interface LoginProps {
   onLogin: (credentials: any) => Promise<boolean>;
@@ -16,7 +17,10 @@ export interface LoginProps {
 }
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const userCookie = Cookies.get('user');
+    return userCookie ? JSON.parse(userCookie) : null;
+  });
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -24,10 +28,12 @@ function App() {
   const handleLogin = async (credentials: any) => {
     try {
       const response = await loginUser(credentials);
-      setCurrentUser(response.data);
+      const userData: any = response.data;
+      setCurrentUser(userData);
+      localStorage.setItem('token', userData.accessToken);
+      Cookies.set('user', JSON.stringify(userData), { expires: 7 });
       return true;
     } catch (error) {
-      // Handle login error (e.g., show message)
       return false;
     }
   };
@@ -35,13 +41,13 @@ function App() {
   // Function to handle user registration using the API
   const handleRegister = async (userData: any) => {
     try {
-      const response = await registerUser(userData);
-      // Optionally, you can log in the user or show a success message
+      const response: any = await registerUser(userData);
       setCurrentUser(response.data);
-      setCurrentPage('users'); // Navigate to users page after registration
+      setCurrentPage('users');
+      localStorage.setItem('token', response.data.accessToken);
+      Cookies.set('user', JSON.stringify(response.data), { expires: 7 });
       return true;
     } catch (error) {
-      // Handle registration error (e.g., show message)
       return false;
     }
   };
@@ -58,8 +64,8 @@ function App() {
 
   const renderContent = () => {
     switch (currentPage) {
-      case 'users':
-        return <UserManagement userRole={currentUser.userRole} />;
+      case 'hospital':
+        return <HospitalManagement />;
       case 'donors':
         return <DonorManagement userRole={currentUser.userRole} />;
       case 'requests':
@@ -89,7 +95,11 @@ function App() {
         <Header
           onMenuClick={() => setSidebarOpen(true)}
           user={currentUser}
-          onLogout={() => setCurrentUser(null)}
+          onLogout={() => {
+            setCurrentUser(null);
+            localStorage.removeItem('token');
+            Cookies.remove('user');
+          }}
         />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-6">
           {renderContent()}

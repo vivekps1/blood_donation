@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const dotenv = require("dotenv");
 const Roles = require("../models/Roles");
+const axios = require("axios");
 dotenv.config();
 
 // Register user
@@ -75,4 +76,16 @@ const loginUser = async (req, res) => {
     }
 }; 
 
-module.exports = {loginUser, registerUser}
+// Example of using axios to make a GET request to a protected route
+const getProtectedData = async (token) => {
+    try {
+        const response = await axios.get('/api/protected', {
+            headers: { Authorization: token }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error('Error fetching protected data');
+    }
+};
+
+module.exports = {loginUser, registerUser, getProtectedData}

@@ -18,7 +18,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user, onLogout }) => {
           <Menu className="w-5 h-5" />
         </button>
         <h1 className="text-xl font-semibold text-gray-900 capitalize">
-          Welcome, {user.username}
+          Welcome, {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
         </h1>
       </div>
 
@@ -50,4 +50,3 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user, onLogout }) => {
 };
 
 export default Header;
- 

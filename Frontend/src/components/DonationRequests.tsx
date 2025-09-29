@@ -202,7 +202,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole }) => {
                 )}
                 {userRole === 'donor' && request.status === 'approved' && (
                   <button 
-                    onClick={() => handleVolunteer(request.id)}
+                    onClick={() => handleVolunteer(request.id.toString())}
                     className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm"
                   >
                     Volunteer

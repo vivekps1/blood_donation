@@ -1,5 +1,5 @@
 import  React from 'react';
-import  { Home, Users, Activity, Database, Settings, LogOut, X, Bell } from 'lucide-react';
+import  { Home, Users, Activity, Database, Settings, LogOut, X, Bell, Building, Cross } from 'lucide-react';
  
 
 interface SidebarProps {
@@ -13,7 +13,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, setCurrentPage, userRole }) => {
    const menuItems = [
     { id: 'dashboard', name: 'Dashboard', icon: Home },
-    { id: 'users', name: 'Users', icon: Users },
+    { id: 'hospital', name: 'Hospital', icon: Cross },
     { id: 'donors', name: 'Donors', icon: Users },
     { id: 'requests', name: 'Donation Requests', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
