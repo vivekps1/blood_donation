@@ -73,5 +73,10 @@ export const getDonationHistoryAggregate = (params: Record<string, any>) => {
   const qs = search.toString();
   return api.get(`/donation/history/aggregate${qs ? `?${qs}` : ''}`);
 };
+// Notifications
+export const getNotifications = (params: any) => api.get('/notifications', { params });
+export const markNotificationAsRead = (id: string) => api.put(`/notifications/${id}/read`);
+export const markAllNotificationsAsReadForUser = (userId: string) => api.put(`/notifications/user/${userId}/read-all`);
+export const createNotificationApi = (payload: any) => api.post('/notifications', payload);
 
 export default api;

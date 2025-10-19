@@ -1,6 +1,7 @@
 const CryptoJs = require("crypto-js");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Donor = require("../models/Donor");
 const dotenv = require("dotenv");
 const Roles = require("../models/Roles");
 const axios = require("axios");
@@ -33,6 +34,28 @@ const registerUser = async (req, res) => {
     });
     try {
         const user = await newUser.save();
+        
+        // If the user's role is 'donor', also create a donor record
+        if (req.body.role === 'donor') {
+            const donorData = {
+                name: `${req.body.firstName} ${req.body.lastName}`,
+                email: req.body.email,
+                phoneNumber: req.body.phoneNumber,
+                bloodGroup: req.body.bloodGroup,
+                // Required fields that might need to be added to user registration
+                height: req.body.height || '',  // You'll need to add these to registration
+                weight: req.body.weight || '',
+                date: new Date().toISOString(),
+                age: req.body.age || 0,        // Calculate from dateofBirth or get from registration
+                bloodPressure: req.body.bloodPressure || 0,
+                diseases: req.body.diseases || 'No',
+                status: 0  // default status
+            };
+
+            const newDonor = new Donor(donorData);
+            await newDonor.save();
+        }
+
         res.status(201).json(user);
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
