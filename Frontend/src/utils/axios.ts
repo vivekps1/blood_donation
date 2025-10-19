@@ -60,4 +60,10 @@ export const getDonationEntriesStats = () => api.get('/donation/history/stats');
 
 export const getDonationHistoryByUser = (userId: string) => api.get(`/donation/history/user/${userId}/ids`);
 
+// Notifications
+export const getNotifications = (params: any) => api.get('/notifications', { params });
+export const markNotificationAsRead = (id: string) => api.put(`/notifications/${id}/read`);
+export const markAllNotificationsAsReadForUser = (userId: string) => api.put(`/notifications/user/${userId}/read-all`);
+export const createNotificationApi = (payload: any) => api.post('/notifications', payload);
+
 export default api;

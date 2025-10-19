@@ -1,45 +1,20 @@
-import  React, { useState } from 'react';
+import  React, { useEffect, useState } from 'react';
+import Cookies from 'js-cookie';
 import { Bell, Mail, Phone, Send, Check, Clock, AlertCircle } from 'lucide-react';
-import type { Notification, User } from '../types';
+import type { Notification } from '../types';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsReadForUser, createNotificationApi } from '../utils/axios';
 
 interface NotificationCenterProps {
-  userRole: string;
+  currentUser: any;
 }
 
-const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => {
+const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {} }) => {
   const [activeTab, setActiveTab] = useState('received');
   const [notificationFilter, setNotificationFilter] = useState('all');
 
-  const notifications: Notification[] = [
-    {
-      id: '1',
-      user_id: 'current_user',
-      type: 'donation_request',
-      title: 'Urgent Blood Request - O+ Needed',
-      message: 'City General Hospital urgently needs 3 units of O+ blood. Your donation could save lives!',
-      is_read: false,
-      created_at: '2024-01-20T10:30:00Z',
-      data: { hospital: 'City General Hospital', blood_type: 'O+', urgency: 'critical' }
-    },
-    {
-      id: '2',
-      user_id: 'current_user',
-      type: 'eligibility',
-      title: 'You\'re Eligible to Donate Again!',
-      message: 'It\'s been 3 months since your last donation. You can now help save more lives.',
-      is_read: true,
-      created_at: '2024-01-19T09:15:00Z'
-    },
-    {
-      id: '3',
-      user_id: 'current_user',
-      type: 'system',
-      title: 'Profile Updated Successfully',
-      message: 'Your profile information has been updated. Thank you for keeping your details current.',
-      is_read: true,
-      created_at: '2024-01-18T14:20:00Z'
-    }
-  ];
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [newNotification, setNewNotification] = useState({
     recipients: 'all',
@@ -48,6 +23,41 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
     title: '',
     message: ''
   });
+  const userCookie = Cookies.get('user');
+  const parsedUser = userCookie ? JSON.parse(userCookie) : null;
+  const currentUserId = currentUser?._id || parsedUser?._id;
+  console.log('Current User ID:', currentUserId);
+
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getNotifications({ userId: currentUserId, size: 50 });
+      // Backend returns { count, page, size, notifications }
+  const data: any = res.data;
+  const items = (data.notifications || []).map((n: any) => ({
+        id: n._id || n.notificationId || '',
+        user_id: n.userId,
+        type: n.notificationType || 'system',
+        title: n.title || (n.notificationType || '').replace('_', ' '),
+        message: n.message,
+        is_read: !!n.isRead,
+        created_at: n.sentAt || n.createdAt || new Date().toISOString(),
+        data: n.data || {}
+      } as Notification));
+      setNotifications(items);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err.message || 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredNotifications = notifications.filter(notification => {
     if (notificationFilter === 'all') return true;
@@ -64,14 +74,44 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
   };
 
   const handleSendNotification = () => {
-    console.log('Sending notification:', newNotification);
-    setNewNotification({
-      recipients: 'all',
-      bloodType: 'all',
-      channel: 'both',
-      title: '',
-      message: ''
-    });
+    (async () => {
+      try {
+        // Build payload according to backend model
+        const payload: any = {
+          notificationType: 'system',
+          message: newNotification.message,
+          title: newNotification.title,
+          userId: newNotification.recipients, // 'all' | 'donors' | 'eligible' | specific id
+          sentAt: new Date(),
+          channel: newNotification.channel,
+        };
+        await createNotificationApi(payload);
+        // refetch
+        await fetchNotifications();
+        setNewNotification({ recipients: 'all', bloodType: 'all', channel: 'both', title: '', message: '' });
+      } catch (err: any) {
+        setError(err?.response?.data?.error || err.message || 'Failed to send notification');
+      }
+    })();
+  };
+
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      // optimistic update
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+      await markNotificationAsRead(id);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err.message || 'Failed to mark as read');
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await markAllNotificationsAsReadForUser(currentUserId);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err.message || 'Failed to mark all as read');
+    }
   };
 
   return (
@@ -96,7 +136,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
           >
             Received Notifications
           </button>
-                   {userRole === 'admin' && ( 
+                   {currentUser.userRole === 'admin' && ( 
             <button
               onClick={() => setActiveTab('send')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
@@ -127,7 +167,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
                 <option value="eligibility">Eligibility Updates</option>
                 <option value="system">System Messages</option>
               </select>
-              <button className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
+              <button onClick={handleMarkAllAsRead} className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
                 Mark All as Read
               </button>
             </div>
@@ -135,6 +175,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
 
           {/* Notifications List */}
           <div className="space-y-4">
+            {loading && <div className="p-4">Loading notifications...</div>}
+            {error && <div className="p-4 text-red-600">{error}</div>}
+            {!loading && !error && filteredNotifications.length === 0 && (
+              <div className="p-4 text-gray-600">No notifications</div>
+            )}
             {filteredNotifications.map((notification) => (
               <div
                 key={notification.id}
@@ -169,7 +214,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userRole }) => 
                       </div>
                       <div className="flex space-x-2">
                         {!notification.is_read && (
-                          <button className="text-purple-600 hover:text-purple-800 text-sm">
+                          <button onClick={() => handleMarkAsRead(notification.id)} className="text-purple-600 hover:text-purple-800 text-sm">
                             Mark as Read
                           </button>
                         )}
