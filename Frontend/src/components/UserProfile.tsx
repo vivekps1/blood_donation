@@ -1,12 +1,13 @@
 import  React, { useState } from 'react';
-import { User, Phone, Mail, MapPin, Camera, FileText, History, Edit2, Save, X } from 'lucide-react';
+import { updateUserProfile } from '../utils/axios';
+import { User, Phone, Mail, Camera, FileText, History, Edit2, Save } from 'lucide-react';
 
 interface UserData {
   id: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
-  address: string;
   photo?: string;
   role: 'donor' | 'admin' | 'user';
   healthReport?: {
@@ -29,10 +30,10 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({
-    name: user.name,
+    firstName: user.firstName,
+    lastName: user.lastName,
     phone: user.phone,
     email: user.email,
-    address: user.address
   });
   const [showHealthHistory, setShowHealthHistory] = useState(false);
 
@@ -43,8 +44,25 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   ];
 
   const handleSave = () => {
-    onUpdate?.(editData);
-    setIsEditing(false);
+    const payload = {
+      firstName: editData.firstName,
+      lastName: editData.lastName,
+      phoneNumber: editData.phone,
+      email: editData.email,
+    };
+    updateUserProfile(user.id, payload)
+      .then(() => {
+        onUpdate?.({
+          firstName: editData.firstName,
+          lastName: editData.lastName,
+          phone: editData.phone,
+          email: editData.email,
+        });
+        setIsEditing(false);
+      })
+      .catch(() => {
+        // Optionally show error
+      });
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,7 +96,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           
           <div className="flex-1">
             <div className="flex items-center justify-between mb-2">
-              <h1 className="text-2xl font-bold">{user.name}</h1>
+              <h1 className="text-2xl font-bold">{`${user.firstName} ${user.lastName}`}</h1>
               {isOwnProfile && (
                 <button
                   onClick={() => isEditing ? handleSave() : setIsEditing(true)}
@@ -101,18 +119,34 @@ export const UserProfile: React.FC<UserProfileProps> = ({
         <h2 className="text-lg font-semibold mb-4">Personal Information</h2>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
             {isEditing ? (
               <input
                 type="text"
-                value={editData.name}
-                onChange={(e) => setEditData({...editData, name: e.target.value})}
+                value={editData.firstName}
+                onChange={(e) => setEditData({...editData, firstName: e.target.value})}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                 <User className="w-4 h-4 text-gray-400" />
-                <span>{user.name}</span>
+                <span>{user.firstName}</span>
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editData.lastName}
+                onChange={(e) => setEditData({...editData, lastName: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <User className="w-4 h-4 text-gray-400" />
+                <span>{user.lastName}</span>
               </div>
             )}
           </div>
@@ -151,22 +185,6 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-            {isEditing ? (
-              <input
-                type="text"
-                value={editData.address}
-                onChange={(e) => setEditData({...editData, address: e.target.value})}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            ) : (
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <MapPin className="w-4 h-4 text-gray-400" />
-                <span>{user.address}</span>
-              </div>
-            )}
-          </div>
         </div>
 
         {isEditing && (

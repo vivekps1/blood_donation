@@ -1,18 +1,30 @@
-const mongoose = require("mongoose") ;
+const mongoose = require("mongoose");
 
-const HospitalSchema = mongoose.Schema({
-  hospitalId : {type: Number} , 
-  hospitalName: {type:String, reqyire:true}, 
-  regNo : {type:Number, require:true}, 
-  contactName: {type:String, require:true} ,
-  email : {type:String, require:true}, 
-  phoneNumber: {type:String, require:true}, 
-  address: {type:String, require:true} ,
-  city : {type:String, require:true}, 
-  state: {type:String, require:true}, 
-  pincode:{type:String, require:true}, 
-  isVerified:{type:String, default:false} 
+// Updated: hospitalId switched from Number to String.
+// Also fixed typos (required) and changed isVerified to Boolean for semantic correctness.
+// NOTE: If existing documents store hospitalId as a Number, run a migration to cast them to String.
+// e.g. db.hospitals.find({ hospitalId: { $type: 'int' } }).forEach(d => db.hospitals.updateOne({ _id: d._id }, { $set: { hospitalId: d.hospitalId.toString() } }));
 
-})
+const HospitalSchema = new mongoose.Schema({
+  hospitalId: { type: String, required: false, index: true },
+  hospitalName: { type: String, required: true },
+  regNo: { type: Number, required: true },
+  contactName: { type: String, required: true },
+  email: { type: String, required: true },
+  phoneNumber: { type: String, required: true },
+  address: { type: String, required: true },
+  city: { type: String, required: true },
+  state: { type: String, required: true },
+  pincode: { type: String, required: true },
+  isVerified: { type: Boolean, default: false }
+}, { timestamps: true });
 
-module.exports = mongoose.model("Hospital", HospitalSchema) ;
+// Safeguard: ensure hospitalId stored as string if provided numerically.
+HospitalSchema.pre('save', function(next) {
+  if (this.hospitalId != null && typeof this.hospitalId !== 'string') {
+    this.hospitalId = String(this.hospitalId);
+  }
+  next();
+});
+
+module.exports = mongoose.model("Hospital", HospitalSchema);

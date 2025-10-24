@@ -5,7 +5,20 @@ const Hospital = require("../models/Hospital") ;
 const createHospital = async (req, res) =>{
 try{
     // console.log(req.body)
-    const newHospital = Hospital(req.body) ; 
+    const payload = { ...req.body };
+    // Normalize hospitalId to string if provided
+    if (payload.hospitalId != null) {
+        payload.hospitalId = String(payload.hospitalId);
+    }
+    // Auto-generate a hospitalId if none supplied (simple timestamp-based ID)
+    if (!payload.hospitalId) {
+        payload.hospitalId = `H-${Date.now()}`;
+    }
+    // Convert isVerified from possible 'true'/'false' strings to Boolean
+    if (typeof payload.isVerified === 'string') {
+        payload.isVerified = payload.isVerified === 'true';
+    }
+    const newHospital = Hospital(payload) ; 
     const hospital = await newHospital.save() ; 
     res.status(201).json(hospital)
 
@@ -34,9 +47,16 @@ const updateHospital = async (req, res) => {
     if(Object.keys(req.body).length == 0){
         return res.status(204).json("Nothing updated")
     }
+    const updatePayload = { ...req.body };
+    if (updatePayload.hospitalId != null) {
+        updatePayload.hospitalId = String(updatePayload.hospitalId);
+    }
+    if (typeof updatePayload.isVerified === 'string') {
+        updatePayload.isVerified = updatePayload.isVerified === 'true';
+    }
     const updateHospital = await Hospital.findByIdAndUpdate(
         req.params.id , 
-        {$set:req.body}, 
+        {$set:updatePayload}, 
         {new:true}
     )
     res.status(200).json(updateHospital)

@@ -4,27 +4,27 @@ const { createDonationEntry, getAllDonationEntries, updateDonationEntry, deleteD
 const router = express.Router() ; 
 
 
+// NOTE: Order matters. Place more specific paths BEFORE any generic ":id" matcher.
+
 // Add donation entry
 router.post("/",verifyTokenAndAuthorization, createDonationEntry) ;
 
-//Get All Donation Entries
+// Get All Donation Entries
 router.get("/",verifyTokenAndAuthorization, getAllDonationEntries) ;
 
-
-//Donation Entry stats
+// Donation Entry stats
 router.get("/stats", verifyTokenAndAuthorization, getDonationEntriesStats) ;
 
-// Update Donation Entries
+// Get Donation Entry IDs by User (must be before ":id")
+router.get("/user/:userId/ids", verifyToken, getDonationEntryIdsByUser);
 
+// Update Donation Entries
 router.put("/:id",verifyTokenAndAuthorization, updateDonationEntry) ;
 
-//Delete Donation Entries
+// Delete Donation Entries
 router.delete("/:id", verifyTokenAndAuthorization, deleteDonationEntry) ;
 
-//Get one Donation Entry
+// Get one Donation Entry
 router.get("/:id",verifyToken, getOneDonationEntry) ;
-
-// Get Donation Entry IDs by User
-router.get("/user/:userId/ids", verifyToken, getDonationEntryIdsByUser);
 
 module.exports= router

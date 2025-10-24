@@ -1,5 +1,5 @@
 import  React from 'react';
-import  { Home, Users, Activity, Database, Settings, LogOut, X, Bell, Building, Cross } from 'lucide-react';
+import  { Home, Users, Activity, Database, Settings, LogOut, X, Bell, Building, Cross, Droplet } from 'lucide-react';
  
 
 interface SidebarProps {
@@ -15,6 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, setCurr
     { id: 'dashboard', name: 'Dashboard', icon: Home },
     { id: 'hospital', name: 'Hospital', icon: Cross },
     { id: 'donors', name: 'Donors', icon: Users },
+    {id: 'donationhistory', name: 'Donation History', icon: Droplet},
     { id: 'requests', name: 'Donation Requests', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'reports', name: 'Reports', icon: Database },
@@ -23,7 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, setCurr
 
    const filteredItems = menuItems.filter(item => {
     console.log(userRole);
-    if (userRole === 'donor') return ['dashboard', 'requests', 'notifications'].includes(item.id);
+    if (userRole === 'donor') return ['dashboard', 'donationhistory','requests', 'notifications'].includes(item.id);
     return true;
   });
  

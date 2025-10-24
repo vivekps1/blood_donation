@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Search, Filter, MapPin, Phone, Mail } from 'lucide-react';
+import { Users, MapPin, Phone, Mail, Edit2, X, Save } from 'lucide-react';
 import type { Donor } from '../types';
-import { getAllDonors, getDonorsStats } from '../utils/axios';
+import { getAllDonors, getDonorsStats, updateDonor } from '../utils/axios';
 
 interface DonationManagementProps {
   userRole: string;
@@ -9,11 +9,8 @@ interface DonationManagementProps {
 
 const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   const [donors, setDonors] = useState<Donor[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<'name' | 'bloodGroup' | ''>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [bloodTypeFilter, setBloodTypeFilter] = useState('all');
-  const [eligibilityFilter, setEligibilityFilter] = useState('all');
   const [appliedFilters, setAppliedFilters] = useState({ bloodType: 'all', eligibility: 'all', search: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
@@ -25,6 +22,60 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   const [sortModalOpen, setSortModalOpen] = useState(false);
   const [sortTempField, setSortTempField] = useState(sortField);
   const [sortTempOrder, setSortTempOrder] = useState(sortOrder);
+  // Modal state for viewing/editing a donor
+  const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
+  const [donorForm, setDonorForm] = useState<Partial<Donor>>({});
+  const [saving, setSaving] = useState(false);
+
+  const openDonorModal = (donor: Donor) => {
+    setSelectedDonor(donor);
+    setDonorForm({
+      name: donor.name,
+      email: donor.email,
+      phoneNumber: donor.phoneNumber,
+      bloodGroup: donor.bloodGroup,
+      height: donor.height,
+      weight: donor.weight,
+      address: donor.address || '',
+      diseases: donor.diseases || '',
+      eligibility: donor.eligibility || '',
+    });
+  };
+
+  const closeDonorModal = () => {
+    setSelectedDonor(null);
+    setDonorForm({});
+    setSaving(false);
+  };
+
+  const handleDonorChange = (field: keyof Donor, value: any) => {
+    setDonorForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const saveDonorEdits = async () => {
+    if (!selectedDonor) return;
+    setSaving(true);
+    try {
+      const payload: any = {
+        name: donorForm.name,
+        email: donorForm.email,
+        phoneNumber: donorForm.phoneNumber,
+        bloodGroup: donorForm.bloodGroup,
+        height: donorForm.height,
+        weight: donorForm.weight,
+        address: donorForm.address,
+        diseases: donorForm.diseases,
+        eligibility: donorForm.eligibility,
+      };
+      Object.keys(payload).forEach(k => (payload[k] === undefined || payload[k] === '') && delete payload[k]);
+      const resp = await updateDonor(selectedDonor._id, payload);
+  const updated: Partial<Donor> = resp.data as any;
+  setDonors(prev => prev.map(d => d._id === selectedDonor._id ? { ...d, ...(updated as Partial<Donor>) } : d));
+      closeDonorModal();
+    } catch (e) {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDonors = async () => {
@@ -96,7 +147,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   }
 
   // Update sort button label to reflect current sort field and order
-  const sortLabel = `Sort${sortField ? `: ${sortField === 'name' ? 'Name' : 'Blood Type'} (${sortOrder === 'asc' ? 'Asc' : 'Desc'})` : ''}`;
+  // Removed unused sortLabel constant
 
   return (
   <div className="space-y-6">
@@ -351,9 +402,14 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                       Notify for Donation
                     </button>
                   )}
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm">
-                    View Profile
-                  </button>
+                  {userRole === 'admin' && (
+                    <button
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"
+                      onClick={() => openDonorModal(donor)}
+                    >
+                      <Edit2 className="w-4 h-4" /> View Profile
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -361,6 +417,122 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         })
       )}
     </div>
+
+    {selectedDonor && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between border-b px-6 py-4">
+            <h2 className="text-lg font-semibold">Edit Donor - {selectedDonor.name}</h2>
+            <button onClick={closeDonorModal} className="text-gray-500 hover:text-gray-700">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Name</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.name || ''}
+                  onChange={e => handleDonorChange('name', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Email</label>
+                <input
+                  type="email"
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.email || ''}
+                  onChange={e => handleDonorChange('email', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Phone Number</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.phoneNumber || ''}
+                  onChange={e => handleDonorChange('phoneNumber', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Blood Group</label>
+                <select
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.bloodGroup || ''}
+                  onChange={e => handleDonorChange('bloodGroup', e.target.value)}
+                >
+                  <option value="">Select</option>
+                  {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Height (cm)</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.height || ''}
+                  onChange={e => handleDonorChange('height', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Weight (kg)</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.weight || ''}
+                  onChange={e => handleDonorChange('weight', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Address</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.address || ''}
+                  onChange={e => handleDonorChange('address', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Diseases / Conditions</label>
+                <textarea
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  rows={3}
+                  value={donorForm.diseases || ''}
+                  onChange={e => handleDonorChange('diseases', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Eligibility</label>
+                <select
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.eligibility || ''}
+                  onChange={e => handleDonorChange('eligibility', e.target.value)}
+                >
+                  <option value="">Unknown</option>
+                  <option value="eligible">Eligible</option>
+                  <option value="ineligible">Ineligible</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2 border-t">
+              <button
+                className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200"
+                onClick={closeDonorModal}
+                type="button"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 disabled:opacity-60"
+                onClick={saveDonorEdits}
+                type="button"
+                disabled={saving}
+              >
+                <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Pagination Controls */}
     <div className="flex justify-center items-center mt-6">

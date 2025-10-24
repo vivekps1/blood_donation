@@ -1,36 +1,141 @@
-import  { useState } from 'react';
-import { Calendar, Filter, Download, Eye } from 'lucide-react';
+import  { useState, useEffect, useMemo } from 'react';
+import { Calendar, Filter, Download, Eye, RefreshCw } from 'lucide-react';
+import { getDonationHistoryAggregate } from '../utils/axios';
 
 interface DonationHistoryProps {
   userRole: 'admin' | 'hospital' | 'donor';
+  userId?: string;
 }
 
-export default function DonationHistory({ userRole }: DonationHistoryProps) {
-  const [filterType, setFilterType] = useState('all');
-  const [dateRange, setDateRange] = useState('month');
+interface DonationRecord {
+  _id: string; // changed from ReactNode to string for masking
+  donationId: string;
+  donationDate: string;
+  donatedUnits: number;
+  donationType?: string;
+  status?: string;
+  remarks?: string;
+  user?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    userName?: string;
+    bloodGroup?: string;
+  };
+  hospital?: {
+    hospitalId?: number;
+    hospitalName?: string;
+    city?: string;
+  };
+  request?: {
+    requestId?: string;
+    bloodGroup?: string;
+    priority?: string;
+    status?: string;
+    location?: string; // added for details modal
+  };
+  report?: {
+    reportId?: string;
+    isEligible?: boolean;
+  };
+}
 
-  const donations = [
-    { id: 1, donor: 'John Smith', bloodType: 'O+', date: '2024-01-15', hospital: 'City General Hospital', units: 1, status: 'Completed' },
-    { id: 2, donor: 'Sarah Johnson', bloodType: 'A-', date: '2024-01-14', hospital: 'Regional Medical Center', units: 1, status: 'Completed' },
-    { id: 3, donor: 'Mike Davis', bloodType: 'B+', date: '2024-01-13', hospital: 'Community Health Center', units: 1, status: 'Processing' },
-    { id: 4, donor: 'Emily Wilson', bloodType: 'AB+', date: '2024-01-12', hospital: 'City General Hospital', units: 1, status: 'Completed' },
-    { id: 5, donor: 'David Brown', bloodType: 'O-', date: '2024-01-11', hospital: 'Regional Medical Center', units: 1, status: 'Completed' },
-  ];
+export default function DonationHistory({ userRole, userId }: DonationHistoryProps) {
+  const [records, setRecords] = useState<DonationRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [bloodFilter, setBloodFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [summary, setSummary] = useState<any>(null);
+  const [selectedRecord, setSelectedRecord] = useState<DonationRecord | null>(null);
 
-  const filteredDonations = donations.filter(donation => {
-    if (filterType === 'all') return true;
-    return donation.bloodType === filterType;
-  });
+  const fetchData = async () => {
+    setLoading(true); setError('');
+    try {
+      const params: any = {};
+      if (userRole === 'donor' && userId) params.userId = userId;
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+  const res = await getDonationHistoryAggregate(params);
+  const data: any = res.data as any;
+  setRecords(data.records || []);
+  setSummary(data.summary || null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Failed to load donation history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); // initial
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filtered = useMemo(() => {
+    return records.filter(r => {
+      const blood = r.user?.bloodGroup || r.request?.bloodGroup;
+      if (bloodFilter !== 'all' && blood !== bloodFilter) return false;
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      return true;
+    });
+  }, [records, bloodFilter, statusFilter]);
+
+  const maskId = (id: string | undefined): string => {
+    if (!id) return '';
+    if (id.length <= 8) return id; // don't mask very short ids
+    return `${id.slice(0,4)}***${id.slice(-4)}`;
+  };
+
+  const buildTooltip = (r: DonationRecord): string => {
+    const parts = [
+      `Full ID: ${r._id || ''}`
+    ].filter(Boolean);
+    return parts.join('\n');
+  };
+
+  const closeModal = () => setSelectedRecord(null);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold text-gray-900">Donation History</h2>
         <div className="flex space-x-4">
-          <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2">
-            <Download size={20} />
-            <span>Export</span>
+          <button
+            onClick={fetchData}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-60"
+            disabled={loading}
+          >
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
           </button>
+          {filtered.length > 0 && (
+            <button
+              onClick={() => {
+                const csv = [
+                  ['Donation ID','Date','Units','Type','Status','Blood Group','Hospital','City'].join(',') ,
+                  ...filtered.map(r => [
+                    r.donationId,
+                    r.donationDate ? new Date(r.donationDate).toISOString().slice(0,10) : '',
+                    r.donatedUnits ?? '',
+                    r.donationType ?? '',
+                    r.status ?? '',
+                    r.user?.bloodGroup || r.request?.bloodGroup || '',
+                    r.hospital?.hospitalName || '',
+                    r.hospital?.city || ''
+                  ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+                ].join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'donation_history.csv'; a.click(); URL.revokeObjectURL(url);
+              }}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+            >
+              <Download size={18} /> <span>Export</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -50,103 +155,224 @@ export default function DonationHistory({ userRole }: DonationHistoryProps) {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-4 items-end">
         <div className="flex items-center space-x-2">
           <Filter size={20} className="text-gray-500" />
           <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
+            value={bloodFilter}
+            onChange={e => setBloodFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
           >
             <option value="all">All Blood Types</option>
-            {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
+            {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
           </select>
         </div>
         <div className="flex items-center space-x-2">
           <Calendar size={20} className="text-gray-500" />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <span className="text-gray-500">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+        <div className="flex items-center space-x-2">
           <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
           >
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-            <option value="quarter">This Quarter</option>
-            <option value="year">This Year</option>
+            <option value="all">All Statuses</option>
+            {['pending','completed','cancelled','failed'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+        <button
+          onClick={fetchData}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+        >Apply</button>
+        <button
+          onClick={() => { setBloodFilter('all'); setStatusFilter('all'); setDateFrom(''); setDateTo(''); fetchData(); }}
+          className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
+        >Reset</button>
       </div>
 
       {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Donations</h3>
-          <p className="text-3xl font-bold text-red-600">1,247</p>
-          <p className="text-sm text-gray-600">+15% from last month</p>
+          <p className="text-3xl font-bold text-red-600">{summary ? summary.totalDonations : '-'}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Blood Units</h3>
-          <p className="text-3xl font-bold text-blue-600">1,247</p>
-          <p className="text-sm text-gray-600">Lives potentially saved</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Units</h3>
+          <p className="text-3xl font-bold text-blue-600">{summary ? summary.totalUnits : '-'}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Active Donors</h3>
-          <p className="text-3xl font-bold text-green-600">892</p>
-          <p className="text-sm text-gray-600">Regular contributors</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Unique Hospitals</h3>
+          <p className="text-3xl font-bold text-green-600">{summary ? new Set(records.map(r => r.hospital?.hospitalId)).size : '-'}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Success Rate</h3>
-          <p className="text-3xl font-bold text-purple-600">98.5%</p>
-          <p className="text-sm text-gray-600">Successful donations</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Eligible Reports</h3>
+          <p className="text-3xl font-bold text-purple-600">{summary ? records.filter(r => r.report?.isEligible).length : '-'}</p>
         </div>
       </div>
 
       {/* Donations Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {error && <div className="p-4 text-sm text-red-600 bg-red-50 border-b border-red-200">{error}</div>}
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Donor</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Type</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Donation ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hospital</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hospital</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-6 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {filteredDonations.map((donation) => (
-              <tr key={donation.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">{donation.donor}</td>
-                <td className="px-6 py-4">
+            {filtered.map(r => (
+              <tr key={r.donationId} className="hover:bg-gray-50">
+                <td className="px-6 py-3 text-sm font-medium text-gray-900">
+                  <span title={buildTooltip(r)} className="cursor-pointer whitespace-pre-line">{maskId(r._id)}</span>
+                </td>
+                <td className="px-6 py-3 text-sm text-gray-700">{r.donationDate ? new Date(r.donationDate).toLocaleDateString() : ''}</td>
+                <td className="px-6 py-3 text-sm">{r.donatedUnits ?? '-'}</td>
+                <td className="px-6 py-3 text-sm">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    {donation.bloodType}
+                    {r.user?.bloodGroup || r.request?.bloodGroup || '-'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-900">{donation.date}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{donation.hospital}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{donation.units}</td>
-                <td className="px-6 py-4">
+                <td className="px-6 py-3 text-sm text-gray-700">{r.hospital?.hospitalName || '-'}</td>
+                <td className="px-6 py-3 text-sm">{r.donationType || '-'}</td>
+                <td className="px-6 py-3 text-sm">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    donation.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                    r.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {donation.status}
+                    {r.status || '-'}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <button className="text-blue-600 hover:text-blue-900">
-                    <Eye size={16} />
+                <td className="px-6 py-3 text-sm text-right">
+                  <button
+                    onClick={() => setSelectedRecord(r)}
+                    className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"
+                  >
+                    <Eye size={14} /> Details
                   </button>
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && !loading && (
+              <tr>
+                <td colSpan={8} className="px-6 py-6 text-center text-sm text-gray-500">No donation records found.</td>
+              </tr>
+            )}
+            {loading && (
+              <tr>
+                <td colSpan={8} className="px-6 py-6 text-center text-sm text-gray-500">Loading...</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {selectedRecord && (
+        <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={closeModal}>
+          <div
+            className="bg-white w-full max-w-3xl rounded-lg shadow-xl border border-gray-200 animate-fadeIn"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h3 className="text-xl font-semibold text-gray-800">Donation Details</h3>
+              <button
+                onClick={closeModal}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+                aria-label="Close details dialog"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-6">
+              <section>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Core</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <Detail label="Internal ID" value={selectedRecord._id} />
+                  <Detail label="Donation ID" value={selectedRecord.donationId} />
+                  <Detail label="Date" value={selectedRecord.donationDate ? new Date(selectedRecord.donationDate).toLocaleString() : '-'} />
+                  <Detail label="Units" value={selectedRecord.donatedUnits ?? '-'} />
+                  <Detail label="Type" value={selectedRecord.donationType || '-'} />
+                  <Detail label="Status" value={selectedRecord.status || '-'} />
+                  <Detail label="Remarks" value={selectedRecord.remarks || '-'} full />
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Donor</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <Detail label="User ID" value={selectedRecord.user?._id || '-'} />
+                  <Detail label="Name" value={selectedRecord.user ? `${selectedRecord.user.firstName || ''} ${selectedRecord.user.lastName || ''}`.trim() || '-' : '-'} />
+                  <Detail label="Username" value={selectedRecord.user?.userName || '-'} />
+                  <Detail label="Blood Group" value={selectedRecord.user?.bloodGroup || selectedRecord.request?.bloodGroup || '-'} />
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Hospital</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <Detail label="Hospital ID" value={selectedRecord.hospital?.hospitalId?.toString() || '-'} />
+                  <Detail label="Hospital" value={selectedRecord.hospital?.hospitalName || '-'} />
+                  <Detail label="City" value={selectedRecord.hospital?.city || '-'} />
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Request</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <Detail label="Request ID" value={selectedRecord.request?.requestId || '-'} />
+                  <Detail label="Priority" value={selectedRecord.request?.priority || '-'} />
+                  <Detail label="Req. Status" value={selectedRecord.request?.status || '-'} />
+                  <Detail label="Blood Group" value={selectedRecord.request?.bloodGroup || '-'} />
+                  <Detail label="Location" value={selectedRecord.request?.location || '-'} full />
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Report</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <Detail label="Report ID" value={selectedRecord.report?.reportId || '-'} />
+                  <Detail label="Eligible" value={selectedRecord.report?.isEligible != null ? (selectedRecord.report?.isEligible ? 'Yes' : 'No') : '-'} />
+                </div>
+              </section>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-100"
+              >Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
- 
+
+// Reusable detail row component (kept outside main component scope for clarity)
+interface DetailProps { label: string; value: any; full?: boolean }
+function Detail({ label, value, full }: DetailProps) {
+  return (
+    <div className={full ? 'sm:col-span-2' : ''}>
+      <span className="block text-xs font-medium text-gray-500 tracking-wide">{label}</span>
+      <span className="mt-0.5 block text-gray-800 break-words">{value === undefined || value === null || value === '' ? '-' : value}</span>
+    </div>
+  );
+}

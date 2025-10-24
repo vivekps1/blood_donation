@@ -4,8 +4,10 @@ import { loginUser, registerUser } from './utils/axios'; // Import the login and
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import { UserProfile } from './components/UserProfile';
 import DonorManagement from './components/DonorManagement';
 import DonationRequests from './components/DonationRequests';
+import DonationHistory from './components/DonationHistory';
 import NotificationCenter from './components/NotificationCenter';
 import Reports from './components/Reports';
 import AuthWrapper from './components/AuthWrapper';
@@ -74,7 +76,39 @@ function App() {
         return <NotificationCenter userRole={currentUser.userRole} />;
       case 'reports':
         return <Reports userRole={currentUser.userRole} />;
-     case 'dashboard':
+      case 'donationhistory':
+        return (
+          <DonationHistory
+            userRole={currentUser.userRole || currentUser.role}
+            userId={currentUser._id || currentUser.id}
+          />
+        );
+      case 'profile':
+        return (
+          <UserProfile
+            user={{
+              id: currentUser._id || currentUser.id,
+              firstName: currentUser.firstName || '',
+              lastName: currentUser.lastName || '',
+              email: currentUser.email || '',
+              phone: currentUser.phoneNumber || currentUser.phone || '',
+              role: currentUser.role || 'user',
+              photo: currentUser.photo || '',
+              healthReport: currentUser.healthReport || undefined,
+            }}
+            isOwnProfile={true}
+            onUpdate={(data) => {
+              setCurrentUser((prev:any) => ({
+                ...prev,
+                ...(data.firstName ? { firstName: data.firstName } : {}),
+                ...(data.lastName ? { lastName: data.lastName } : {}),
+                ...(data.phone ? { phoneNumber: data.phone } : {}),
+                ...(data.email ? { email: data.email } : {}),
+              }));
+            }}
+          />
+        );
+      case 'dashboard':
         return <Dashboard userRole={currentUser.userRole} />;
       default:
         return <Dashboard userRole={currentUser.userRole} />;
@@ -100,6 +134,7 @@ function App() {
             localStorage.removeItem('token');
             Cookies.remove('user');
           }}
+          onProfileClick={() => setCurrentPage('profile')}
         />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-6">
           {renderContent()}

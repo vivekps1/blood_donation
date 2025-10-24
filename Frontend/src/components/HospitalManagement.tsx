@@ -4,6 +4,7 @@ import { getAllHospitals, createHospital, updateHospital, deleteHospital } from 
 
 interface Hospital {
   _id: string;
+  hospitalId?: string; // now string identifier supplied by backend
   hospitalName: string;
   regNo: number;
   contactName: string;
@@ -13,7 +14,7 @@ interface Hospital {
   city: string;
   state: string;
   pincode: string;
-  isVerified: string;
+  isVerified: boolean; // changed from string
 }
 
 export const HospitalManagement: React.FC = () => {
@@ -55,7 +56,7 @@ export const HospitalManagement: React.FC = () => {
       city: '',
       state: '',
       pincode: '',
-      isVerified: 'false',
+      isVerified: false,
     });
   };
 
@@ -188,8 +189,8 @@ export const HospitalManagement: React.FC = () => {
               <input
                 type="checkbox"
                 id="isVerified"
-                checked={editData.isVerified === 'true'}
-                onChange={(e) => setEditData({...editData, isVerified: e.target.checked ? 'true' : 'false'})}
+                checked={!!editData.isVerified}
+                onChange={(e) => setEditData({...editData, isVerified: e.target.checked })}
                 className="w-4 h-4 text-blue-600"
               />
               <label htmlFor="isVerified" className="text-sm">Verified</label>
@@ -236,7 +237,7 @@ export const HospitalManagement: React.FC = () => {
                     <input type="text" placeholder="State" value={editData.state || ''} onChange={e => setEditData({...editData, state: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <input type="text" placeholder="Pincode" value={editData.pincode || ''} onChange={e => setEditData({...editData, pincode: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <div className="flex items-center gap-2">
-                      <input type="checkbox" id="isVerifiedEdit" checked={editData.isVerified === 'true'} onChange={e => setEditData({...editData, isVerified: e.target.checked ? 'true' : 'false'})} className="w-4 h-4 text-blue-600" />
+                      <input type="checkbox" id="isVerifiedEdit" checked={!!editData.isVerified} onChange={e => setEditData({...editData, isVerified: e.target.checked })} className="w-4 h-4 text-blue-600" />
                       <label htmlFor="isVerifiedEdit" className="text-sm">Verified</label>
                     </div>
                   </div>
@@ -270,7 +271,7 @@ export const HospitalManagement: React.FC = () => {
                         <span className="font-medium">{hospital.email}</span>
                       </div>
                       <div className="font-semibold text-green-700 ml-auto">
-                        Verified: <span className="font-bold">{hospital.isVerified === 'true' ? 'Yes' : 'No'}</span>
+                        Verified: <span className="font-bold">{hospital.isVerified ? 'Yes' : 'No'}</span>
                       </div>
                     </div>
                   </div>

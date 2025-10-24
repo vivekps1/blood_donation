@@ -1,3 +1,7 @@
+// User Profile APIs
+export const getUserProfile = (userId: string | number) => api.get(`/user-profile/${userId}`);
+export const updateUserProfile = (userId: string | number, profileData: any) => api.put(`/user-profile/${userId}`, profileData);
+export const createUserProfile = (profileData: any) => api.post('/user-profile', profileData);
 // Hospital Management APIs
 export const getAllHospitals = () => api.get('/hospitals');
 export const createHospital = (hospitalData: any) => api.post('/hospitals', hospitalData);
@@ -59,5 +63,15 @@ export const getDonorsStats = () => api.get('/donors/stats');
 export const getDonationEntriesStats = () => api.get('/donation/history/stats');
 
 export const getDonationHistoryByUser = (userId: string) => api.get(`/donation/history/user/${userId}/ids`);
+
+// Donation history aggregation
+export const getDonationHistoryAggregate = (params: Record<string, any>) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') search.append(k, String(v));
+  });
+  const qs = search.toString();
+  return api.get(`/donation/history/aggregate${qs ? `?${qs}` : ''}`);
+};
 
 export default api;
