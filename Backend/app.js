@@ -7,7 +7,7 @@ const hospitalRoute = require("./routes/hospital") ;
 const roleRoute = require("./routes/role") ; 
 // const requestRoute = require("./routes/request") ;
 const donationHistoryRoute = require("./routes/donationHistory") ;
-const donationHistoryAggregateRoute = require('./routes/donationHistoryAggregate');
+const notificationRoute = require("./routes/notification") ;
 
 
 module.exports = app ; 
@@ -29,9 +29,7 @@ app.use("/api/v1/roles", roleRoute)
 // /aggregate isn't intercepted by the "/:id" route inside donationHistoryRoute.
 app.use('/api/v1/donation/history', donationHistoryAggregateRoute);
 app.use("/api/v1/donation/history", donationHistoryRoute) ;
-const userProfileRoute = require('./routes/userProfile');
-app.use("/api/v1/user-profile", userProfileRoute);
-// app.use("/api/v1/notifications", notificationRoute) ; 
+app.use("/api/v1/notifications", notificationRoute) ; 
 // app.use("/api/v1/reports", reportRoute) ;
 // app.use("/api/v1/users", userRoute) ;
 

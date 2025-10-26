@@ -10,6 +10,12 @@ dotenv.config();
 
 const registerUser = async (req, res) => {
 
+    // Fetch roleId for the payload role (ensure roleId exists)
+    const payloadRoleDoc = await Roles.findOne({ userRole: req.body.role, roleId: { $ne: null } });
+    if (!payloadRoleDoc || typeof payloadRoleDoc.roleId === 'undefined') {
+        return res.status(401).json({ msg: "Invalid role specified" });
+    }
+
     const newUser = User({
         firstName: req.body.firstName,
         lastName: req.body.lastName,
@@ -22,7 +28,7 @@ const registerUser = async (req, res) => {
         phoneNumber: req.body.phoneNumber,
         bloodGroup : req.body.bloodGroup, 
         dateofBirth: req.body.dateofBirth ,
-        roleId : req.body.roleId, 
+        roleId : payloadRoleDoc.roleId, 
         isActive: req.body.isActive
     });
     try {
@@ -56,10 +62,10 @@ const loginUser = async (req, res) => {
         if (!payloadRoleDoc || typeof payloadRoleDoc.roleId === 'undefined') {
             return res.status(401).json({ msg: "Invalid role specified" });
         }
-
         // Check if user's roleId matches the payload roleId
         if (String(user.roleId) !== String(payloadRoleDoc.roleId)) {
-            return res.status(403).json({ msg: `You're not ${payloadRole}` });
+
+            return res.status(403).json({ msg: `You're not ${payloadRole}`, obj : user });
         }
 
         const role = await Roles.findOne({ roleId: user.roleId });
