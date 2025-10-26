@@ -56,7 +56,17 @@ const registerUser = async (req, res) => {
             await newDonor.save();
         }
 
-        res.status(201).json(user);
+        // create token and return sanitized user object
+        const accessToken = jwt.sign(
+            { userId: user._id, roleId: user.roleId },
+            process.env.JWT_SEC,
+            { expiresIn: "5d" }
+        );
+        const { password, ...info } = user._doc;
+        // attach readable userRole
+        const roleDoc = await Roles.findOne({ roleId: user.roleId });
+        info.userRole = roleDoc ? roleDoc.userRole : undefined;
+        res.status(201).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
     }
@@ -99,7 +109,8 @@ const loginUser = async (req, res) => {
             { expiresIn: "5d" }
         );
         info.userRole = role.userRole;
-        res.status(200).json({ ...info, accessToken });
+        // respond with consistent shape: { user, accessToken }
+        res.status(200).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
     }

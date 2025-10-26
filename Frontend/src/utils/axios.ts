@@ -48,6 +48,37 @@ export const updateDonor = (id: any, donorData: any) => api.put(`/donors/${id}`,
 // Example: DELETE a donor
 export const deleteDonor = (id: any) => api.delete(`/donors/${id}`);
 
+// Donation Request APIs
+export const getAllDonationRequests = (filters?: { status?: string }) => {
+  const queryParams = filters?.status && filters.status !== 'all' 
+    ? `?status=${filters.status}` 
+    : '';
+  return api.get(`/donation-requests${queryParams}`);
+};
+
+export const getDonationRequestById = (id: string) => api.get(`/donation-requests/${id}`);
+
+export const createDonationRequest = (requestData: {
+  patientName: string;
+  bloodGroup: string;
+  bloodUnitsCount: number;
+  medicalCondition: string;
+  priority: string;
+  requiredDate: Date;
+  location: string;
+}) => api.post('/donation-requests', requestData);
+
+export const updateDonationRequest = (id: string, requestData: {
+  status?: string;
+  availableDonors?: number;
+  [key: string]: any;
+}) => api.put(`/donation-requests/${id}`, requestData);
+
+export const deleteDonationRequest = (id: string) => api.delete(`/donation-requests/${id}`);
+
+export const volunteerForDonation = (requestId: string, payload: { donorId: string; donorName?: string; contact?: string; expectedDonationTime?: string | Date; message?: string; }) =>
+  api.post(`/donation-requests/${requestId}/volunteer`, payload);
+
 // Login API
 export const loginUser = (credentials: any) => api.post('/auth/login', credentials);
 

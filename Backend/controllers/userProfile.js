@@ -1,10 +1,11 @@
-const UserProfile = require('../models/User');
+const User = require('../models/User');
 
 // Get user profile by userId
 exports.getUserProfile = async (req, res) => {
   try {
     const { userId } = req.params;
-    const profile = await UserProfile.findOne({ userId });
+    // find by _id (userId param is the ObjectId)
+    const profile = await User.findById(userId);
     if (!profile) return res.status(404).json({ message: 'Profile not found' });
     res.json(profile);
   } catch (err) {
@@ -15,7 +16,7 @@ exports.getUserProfile = async (req, res) => {
 // Create user profile
 exports.createUserProfile = async (req, res) => {
   try {
-    const profile = new UserProfile(req.body);
+    const profile = new User(req.body);
     await profile.save();
     res.status(201).json(profile);
   } catch (err) {
@@ -27,7 +28,7 @@ exports.createUserProfile = async (req, res) => {
 exports.updateUserProfile = async (req, res) => {
   try {
     const { userId } = req.params;
-    const profile = await UserProfile.findOneAndUpdate(
+    const profile = await User.findOneAndUpdate(
       { _id: userId },
       req.body,
       { new: true }
