@@ -1,6 +1,7 @@
 const CryptoJs = require("crypto-js");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Donor = require("../models/Donor");
 const dotenv = require("dotenv");
 const Roles = require("../models/Roles");
 const axios = require("axios");
@@ -33,7 +34,39 @@ const registerUser = async (req, res) => {
     });
     try {
         const user = await newUser.save();
-        res.status(201).json(user);
+        
+        // If the user's role is 'donor', also create a donor record
+        if (req.body.role === 'donor') {
+            const donorData = {
+                name: `${req.body.firstName} ${req.body.lastName}`,
+                email: req.body.email,
+                phoneNumber: req.body.phoneNumber,
+                bloodGroup: req.body.bloodGroup,
+                // Required fields that might need to be added to user registration
+                height: req.body.height || '',  // You'll need to add these to registration
+                weight: req.body.weight || '',
+                date: new Date().toISOString(),
+                age: req.body.age || 0,        // Calculate from dateofBirth or get from registration
+                bloodPressure: req.body.bloodPressure || 0,
+                diseases: req.body.diseases || 'No',
+                status: 0  // default status
+            };
+
+            const newDonor = new Donor(donorData);
+            await newDonor.save();
+        }
+
+        // create token and return sanitized user object
+        const accessToken = jwt.sign(
+            { userId: user._id, roleId: user.roleId },
+            process.env.JWT_SEC,
+            { expiresIn: "5d" }
+        );
+        const { password, ...info } = user._doc;
+        // attach readable userRole
+        const roleDoc = await Roles.findOne({ roleId: user.roleId });
+        info.userRole = roleDoc ? roleDoc.userRole : undefined;
+        res.status(201).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
     }
@@ -76,7 +109,8 @@ const loginUser = async (req, res) => {
             { expiresIn: "5d" }
         );
         info.userRole = role.userRole;
-        res.status(200).json({ ...info, accessToken });
+        // respond with consistent shape: { user, accessToken }
+        res.status(200).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
     }

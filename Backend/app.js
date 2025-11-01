@@ -8,11 +8,8 @@ const roleRoute = require("./routes/role") ;
 // const requestRoute = require("./routes/request") ;
 const donationHistoryRoute = require("./routes/donationHistory") ;
 const notificationRoute = require("./routes/notification") ;
-
-
-module.exports = app ; 
-
-
+const donationHistoryAggregateRoute = require("./routes/donationHistoryAggregate") ;
+const donationRequestRoute = require("./routes/donationRequest") ;
 //CORS 
 app.use(cors()); 
 
@@ -28,9 +25,15 @@ app.use("/api/v1/roles", roleRoute)
 // IMPORTANT: Mount the aggregate route BEFORE the generic donationHistoryRoute so that
 // /aggregate isn't intercepted by the "/:id" route inside donationHistoryRoute.
 app.use('/api/v1/donation/history', donationHistoryAggregateRoute);
+app.use('/api/v1/donation-requests', donationRequestRoute);
+
+const userProfileRoute = require("./routes/userProfile");
+app.use('/api/v1/user-profile', userProfileRoute);
+
 app.use("/api/v1/donation/history", donationHistoryRoute) ;
 app.use("/api/v1/notifications", notificationRoute) ; 
 // app.use("/api/v1/reports", reportRoute) ;
 // app.use("/api/v1/users", userRoute) ;
-
 // ERROR HANDLER    
+
+module.exports = app;

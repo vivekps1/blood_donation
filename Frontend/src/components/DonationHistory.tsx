@@ -1,46 +1,44 @@
 import  { useState, useEffect, useMemo } from 'react';
 import { Calendar, Filter, Download, Eye, RefreshCw } from 'lucide-react';
-import { getDonationHistoryAggregate } from '../utils/axios';
+import { getAllDonationRequests } from '../utils/axios';
 
 interface DonationHistoryProps {
   userRole: 'admin' | 'hospital' | 'donor';
   userId?: string;
 }
 
-interface DonationRecord {
-  _id: string; // changed from ReactNode to string for masking
-  donationId: string;
-  donationDate: string;
-  donatedUnits: number;
-  donationType?: string;
-  status?: string;
-  remarks?: string;
-  user?: {
-    _id: string;
-    firstName?: string;
-    lastName?: string;
-    userName?: string;
-    bloodGroup?: string;
-  };
-  hospital?: {
-    hospitalId?: number;
-    hospitalName?: string;
-    city?: string;
-  };
-  request?: {
-    requestId?: string;
-    bloodGroup?: string;
-    priority?: string;
-    status?: string;
-    location?: string; // added for details modal
-  };
-  report?: {
-    reportId?: string;
-    isEligible?: boolean;
-  };
+interface VolunteerEntry {
+  donorId?: string;
+  donorName?: string;
+  contact?: string;
+  expectedDonationTime?: string | Date | null;
+  message?: string | null;
+  volunteeredAt?: string | Date | null;
 }
 
-export default function DonationHistory({ userRole, userId }: DonationHistoryProps) {
+interface DonationRecord {
+  _id: string;
+  requestId?: string;
+  patientName?: string;
+  bloodGroup?: string;
+  bloodUnitsCount?: number;
+  medicalCondition?: string;
+  priority?: string;
+  requestDate?: string | Date;
+  requiredDate?: string | Date;
+  status?: string;
+  location?: string;
+  volunteers?: VolunteerEntry[];
+  availableDonors?: number;
+  hospitalId?: string;
+  fulfilledBy?: string;
+  fulfilledByName?: string;
+  fulfilledAt?: string | Date | null;
+  closedAt?: string | Date | null;
+  closedReason?: string;
+}
+
+export default function DonationHistory({  }: DonationHistoryProps) {
   const [records, setRecords] = useState<DonationRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,14 +52,19 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
   const fetchData = async () => {
     setLoading(true); setError('');
     try {
-      const params: any = {};
-      if (userRole === 'donor' && userId) params.userId = userId;
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
-  const res = await getDonationHistoryAggregate(params);
-  const data: any = res.data as any;
-  setRecords(data.records || []);
-  setSummary(data.summary || null);
+      // request closed donation requests so backend returns records + summary
+      const res = await getAllDonationRequests({ status: 'Completed' });
+      const data: any = res.data;
+      if (Array.isArray(data)) {
+        setRecords(data);
+        setSummary(null);
+      } else if (data && typeof data === 'object') {
+        setRecords(Array.isArray(data.records) ? data.records : []);
+        setSummary(data.summary || null);
+      } else {
+        setRecords([]);
+        setSummary(null);
+      }
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to load donation history');
     } finally {
@@ -75,7 +78,7 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
 
   const filtered = useMemo(() => {
     return records.filter(r => {
-      const blood = r.user?.bloodGroup || r.request?.bloodGroup;
+      const blood = r.bloodGroup;
       if (bloodFilter !== 'all' && blood !== bloodFilter) return false;
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
       return true;
@@ -84,7 +87,7 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
 
   const maskId = (id: string | undefined): string => {
     if (!id) return '';
-    if (id.length <= 8) return id; // don't mask very short ids
+    if (id.length <= 8) return id;
     return `${id.slice(0,4)}***${id.slice(-4)}`;
   };
 
@@ -114,16 +117,16 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
             <button
               onClick={() => {
                 const csv = [
-                  ['Donation ID','Date','Units','Type','Status','Blood Group','Hospital','City'].join(',') ,
+                  ['Request ID','Date','Units','Priority','Status','Blood Group','Hospital ID','Location'].join(','),
                   ...filtered.map(r => [
-                    r.donationId,
-                    r.donationDate ? new Date(r.donationDate).toISOString().slice(0,10) : '',
-                    r.donatedUnits ?? '',
-                    r.donationType ?? '',
+                    r.requestId || r._id,
+                    r.requestDate ? new Date(r.requestDate).toISOString().slice(0,10) : (r.requiredDate ? new Date(r.requiredDate).toISOString().slice(0,10) : ''),
+                    r.bloodUnitsCount ?? '',
+                    r.priority ?? '',
                     r.status ?? '',
-                    r.user?.bloodGroup || r.request?.bloodGroup || '',
-                    r.hospital?.hospitalName || '',
-                    r.hospital?.city || ''
+                    r.bloodGroup || '',
+                    r.hospitalId || '',
+                    r.location || ''
                   ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
                 ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -215,11 +218,11 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Unique Hospitals</h3>
-          <p className="text-3xl font-bold text-green-600">{summary ? new Set(records.map(r => r.hospital?.hospitalId)).size : '-'}</p>
+          <p className="text-3xl font-bold text-green-600">{summary ? summary.uniqueHospitals : '-'}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Eligible Reports</h3>
-          <p className="text-3xl font-bold text-purple-600">{summary ? records.filter(r => r.report?.isEligible).length : '-'}</p>
+          <p className="text-3xl font-bold text-purple-600">{summary ? summary.eligibleReports : '-'}</p>
         </div>
       </div>
 
@@ -241,24 +244,24 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filtered.map(r => (
-              <tr key={r.donationId} className="hover:bg-gray-50">
+              <tr key={r._id} className="hover:bg-gray-50">
                 <td className="px-6 py-3 text-sm font-medium text-gray-900">
                   <span title={buildTooltip(r)} className="cursor-pointer whitespace-pre-line">{maskId(r._id)}</span>
                 </td>
-                <td className="px-6 py-3 text-sm text-gray-700">{r.donationDate ? new Date(r.donationDate).toLocaleDateString() : ''}</td>
-                <td className="px-6 py-3 text-sm">{r.donatedUnits ?? '-'}</td>
+                <td className="px-6 py-3 text-sm text-gray-700">{r.requestDate ? new Date(r.requestDate).toLocaleDateString() : (r.requiredDate ? new Date(r.requiredDate).toLocaleDateString() : '')}</td>
+                <td className="px-6 py-3 text-sm">{r.bloodUnitsCount ?? '-'}</td>
                 <td className="px-6 py-3 text-sm">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    {r.user?.bloodGroup || r.request?.bloodGroup || '-'}
+                    {r.bloodGroup || '-'}
                   </span>
                 </td>
-                <td className="px-6 py-3 text-sm text-gray-700">{r.hospital?.hospitalName || '-'}</td>
-                <td className="px-6 py-3 text-sm">{r.donationType || '-'}</td>
+                <td className="px-6 py-3 text-sm text-gray-700">{r.hospitalId || '-'}</td>
+                <td className="px-6 py-3 text-sm">{r.priority || '-'}</td>
                 <td className="px-6 py-3 text-sm">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    r.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                    String(r.status).toUpperCase() === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {r.status || '-'}
+                    {String(r.status || '-').toLowerCase()}
                   </span>
                 </td>
                 <td className="px-6 py-3 text-sm text-right">
@@ -303,53 +306,63 @@ export default function DonationHistory({ userRole, userId }: DonationHistoryPro
             </div>
             <div className="px-6 py-4 space-y-6">
               <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Core</h4>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Request</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
                   <Detail label="Internal ID" value={selectedRecord._id} />
-                  <Detail label="Donation ID" value={selectedRecord.donationId} />
-                  <Detail label="Date" value={selectedRecord.donationDate ? new Date(selectedRecord.donationDate).toLocaleString() : '-'} />
-                  <Detail label="Units" value={selectedRecord.donatedUnits ?? '-'} />
-                  <Detail label="Type" value={selectedRecord.donationType || '-'} />
+                  <Detail label="Request ID" value={selectedRecord.requestId || '-'} />
+                  <Detail label="Date" value={selectedRecord.requestDate ? new Date(selectedRecord.requestDate).toLocaleString() : (selectedRecord.requiredDate ? new Date(selectedRecord.requiredDate).toLocaleString() : '-')} />
+                  <Detail label="Units" value={selectedRecord.bloodUnitsCount ?? '-'} />
+                  <Detail label="Medical Condition" value={selectedRecord.medicalCondition || '-'} />
                   <Detail label="Status" value={selectedRecord.status || '-'} />
-                  <Detail label="Remarks" value={selectedRecord.remarks || '-'} full />
+                  <Detail label="Location" value={selectedRecord.location || '-'} full />
                 </div>
               </section>
 
               <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Donor</h4>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Patient</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="User ID" value={selectedRecord.user?._id || '-'} />
-                  <Detail label="Name" value={selectedRecord.user ? `${selectedRecord.user.firstName || ''} ${selectedRecord.user.lastName || ''}`.trim() || '-' : '-'} />
-                  <Detail label="Username" value={selectedRecord.user?.userName || '-'} />
-                  <Detail label="Blood Group" value={selectedRecord.user?.bloodGroup || selectedRecord.request?.bloodGroup || '-'} />
+                  <Detail label="Name" value={selectedRecord.patientName || '-'} />
+                  <Detail label="Blood Group" value={selectedRecord.bloodGroup || '-'} />
+                  <Detail label="Priority" value={selectedRecord.priority || '-'} />
+                  <Detail label="Available Donors" value={selectedRecord.availableDonors ?? '-'} />
                 </div>
               </section>
 
               <section>
                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Hospital</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Hospital ID" value={selectedRecord.hospital?.hospitalId?.toString() || '-'} />
-                  <Detail label="Hospital" value={selectedRecord.hospital?.hospitalName || '-'} />
-                  <Detail label="City" value={selectedRecord.hospital?.city || '-'} />
+                  <Detail label="Hospital ID" value={selectedRecord.hospitalId || '-'} />
                 </div>
               </section>
 
               <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Request</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Request ID" value={selectedRecord.request?.requestId || '-'} />
-                  <Detail label="Priority" value={selectedRecord.request?.priority || '-'} />
-                  <Detail label="Req. Status" value={selectedRecord.request?.status || '-'} />
-                  <Detail label="Blood Group" value={selectedRecord.request?.bloodGroup || '-'} />
-                  <Detail label="Location" value={selectedRecord.request?.location || '-'} full />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Volunteers</h4>
+                <div className="space-y-3 text-sm">
+                  {(selectedRecord.volunteers && selectedRecord.volunteers.length > 0) ? (
+                    selectedRecord.volunteers.map((v, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 border border-gray-100 rounded-md">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                          <Detail label="Name" value={v.donorName || v.donorId || '-'} />
+                          <Detail label="Contact" value={v.contact || '-'} />
+                          <Detail label="Expected Time" value={v.expectedDonationTime ? new Date(v.expectedDonationTime).toLocaleString() : '-'} />
+                          <Detail label="Volunteered At" value={v.volunteeredAt ? new Date(v.volunteeredAt).toLocaleString() : '-'} />
+                          <Detail label="Message" value={v.message || '-'} full />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-gray-500">No volunteers recorded for this request.</div>
+                  )}
                 </div>
               </section>
 
               <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Report</h4>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Fulfillment</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Report ID" value={selectedRecord.report?.reportId || '-'} />
-                  <Detail label="Eligible" value={selectedRecord.report?.isEligible != null ? (selectedRecord.report?.isEligible ? 'Yes' : 'No') : '-'} />
+                  <Detail label="Fulfilled By" value={selectedRecord.fulfilledByName || selectedRecord.fulfilledBy || '-'} />
+                  <Detail label="Fulfilled At" value={selectedRecord.fulfilledAt ? new Date(selectedRecord.fulfilledAt).toLocaleString() : '-'} />
+                  <Detail label="Closed At" value={selectedRecord.closedAt ? new Date(selectedRecord.closedAt).toLocaleString() : '-'} />
+                  <Detail label="Closed Reason" value={selectedRecord.closedReason || '-'} full />
                 </div>
               </section>
             </div>
