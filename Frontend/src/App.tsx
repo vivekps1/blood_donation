@@ -30,9 +30,14 @@ function App() {
   const handleLogin = async (credentials: any) => {
     try {
       const response = await loginUser(credentials);
-      const userData: any = response.data;
+      const respData: any = response.data;
+      // Support responses that either return the user directly or wrap it in a `user` field
+      const userData: any = respData.user ?? respData;
+      // token might be at top-level (respData.accessToken) or on the user object
+      const token = userData.accessToken ?? respData.accessToken ?? respData.token ?? userData.token;
+
       setCurrentUser(userData);
-      localStorage.setItem('token', userData.accessToken);
+      if (token) localStorage.setItem('token', token);
       Cookies.set('user', JSON.stringify(userData), { expires: 7 });
       return true;
     } catch (error) {
@@ -44,10 +49,14 @@ function App() {
   const handleRegister = async (userData: any) => {
     try {
       const response: any = await registerUser(userData);
-      setCurrentUser(response.data);
+      const respData: any = response.data;
+      const createdUser: any = respData.user ?? respData;
+      const token = createdUser.accessToken ?? respData.accessToken ?? respData.token ?? createdUser.token;
+
+      setCurrentUser(createdUser);
       setCurrentPage('users');
-      localStorage.setItem('token', response.data.accessToken);
-      Cookies.set('user', JSON.stringify(response.data), { expires: 7 });
+      if (token) localStorage.setItem('token', token);
+      Cookies.set('user', JSON.stringify(createdUser), { expires: 7 });
       return true;
     } catch (error) {
       return false;
@@ -71,7 +80,7 @@ function App() {
       case 'donors':
         return <DonorManagement userRole={currentUser.userRole} />;
       case 'requests':
-        return <DonationRequests userRole={currentUser.userRole} />;
+        return <DonationRequests currentUser={currentUser} userRole={currentUser.userRole} />;
       case 'notifications':
         return <NotificationCenter userRole={currentUser.userRole} />;
       case 'reports':
