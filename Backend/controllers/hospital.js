@@ -6,6 +6,14 @@ const createHospital = async (req, res) =>{
 try{
     // console.log(req.body)
     const payload = { ...req.body };
+    // If front-end sent latitude/longitude, normalize into GeoJSON for storage
+    if (payload.latitude !== undefined && payload.longitude !== undefined) {
+        const lat = parseFloat(payload.latitude);
+        const lng = parseFloat(payload.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+            payload.locationGeo = { type: 'Point', coordinates: [lng, lat] };
+        }
+    }
     // Normalize hospitalId to string if provided
     if (payload.hospitalId != null) {
         payload.hospitalId = String(payload.hospitalId);
@@ -48,6 +56,14 @@ const updateHospital = async (req, res) => {
         return res.status(204).json("Nothing updated")
     }
     const updatePayload = { ...req.body };
+    // Map latitude/longitude to GeoJSON if provided
+    if (updatePayload.latitude !== undefined && updatePayload.longitude !== undefined) {
+        const lat = parseFloat(updatePayload.latitude);
+        const lng = parseFloat(updatePayload.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+            updatePayload.locationGeo = { type: 'Point', coordinates: [lng, lat] };
+        }
+    }
     if (updatePayload.hospitalId != null) {
         updatePayload.hospitalId = String(updatePayload.hospitalId);
     }
@@ -64,6 +80,31 @@ const updateHospital = async (req, res) => {
     res.status(500).json(error)
  } 
 } ; 
+
+// Get nearby hospitals based on lat,lng and optional radius (meters)
+const getNearbyHospitals = async (req, res) => {
+    try {
+        const { lat, lng, radius } = req.query;
+        if (!lat || !lng) {
+            return res.status(400).json({ message: 'lat and lng query params are required' });
+        }
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lng);
+        const maxDistance = radius ? parseInt(radius) : 5000; // default 5km
+
+        const hospitals = await Hospital.find({
+            locationGeo: {
+                $near: {
+                    $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+                    $maxDistance: maxDistance
+                }
+            }
+        });
+        res.status(200).json(hospitals);
+    } catch (error) {
+        res.status(500).json(error);
+    }
+}
 
 //GET One Hospital 
 
@@ -115,4 +156,4 @@ const getHospitalStats = async (req, res) =>{
     }
 }
 
-module.exports = {deleteHospital, getOneHospital, getAllHospitals,getHospitalStats,updateHospital, createHospital}
+module.exports = {deleteHospital, getOneHospital, getAllHospitals,getHospitalStats,updateHospital, createHospital, getNearbyHospitals}

@@ -14,6 +14,20 @@ const HospitalSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true },
   address: { type: String, required: true },
   city: { type: String, required: true },
+  // Optional human-friendly location tag (e.g. campus, zone, branch name)
+  location: { type: String, required: false },
+  // GeoJSON point for precise location (stored as [lng, lat])
+  locationGeo: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [lng, lat]
+      default: [0, 0]
+    }
+  },
   state: { type: String, required: true },
   pincode: { type: String, required: true },
   isVerified: { type: Boolean, default: false }
@@ -28,3 +42,6 @@ HospitalSchema.pre('save', function(next) {
 });
 
 module.exports = mongoose.model("Hospital", HospitalSchema);
+
+// Create 2dsphere index for geospatial queries
+HospitalSchema.index({ locationGeo: '2dsphere' });

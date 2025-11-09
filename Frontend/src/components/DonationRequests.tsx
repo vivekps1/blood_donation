@@ -7,6 +7,7 @@ import {
   updateDonationRequest,
   volunteerForDonation,
 } from '../utils/axios';
+import { getAllHospitals } from '../utils/axios';
 
 interface DonationRequest {
   requestId: string;
@@ -37,6 +38,10 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [browserLat, setBrowserLat] = useState<number | null>(null);
+  const [browserLng, setBrowserLng] = useState<number | null>(null);
+  const [browserAccuracy, setBrowserAccuracy] = useState<number | null>(null);
   const [formData, setFormData] = useState<any>({
     patientName: '',
     bloodGroup: '',
@@ -62,9 +67,33 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
       setLoading(true);
   // normalize status to backend convention (uppercase) when filtering
   const statusParam = statusFilter && statusFilter !== 'all' ? statusFilter.toUpperCase() : undefined;
-  const response = await getAllDonationRequests({ status: statusParam } as any);
+  const filters: any = {};
+  if (statusParam) filters.status = statusParam;
+  // include coordinates to let backend sort by proximity
+  // Priority: if user is a donor and browser geolocation is available, use browser coords.
+  // If browser geolocation is available use it (preferred). This will be set for donors
+  // but we send it whenever available so the backend can use it for proximity ordering.
+  if (browserLat != null && browserLng != null) {
+    filters.lat = browserLat;
+    filters.lng = browserLng;
+    if (browserAccuracy != null) filters.accuracy = browserAccuracy;
+  } else if (currentUser) {
+    // fall back to stored user coordinates
+    if (typeof currentUser.latitude === 'number' && typeof currentUser.longitude === 'number') {
+      filters.lat = currentUser.latitude;
+      filters.lng = currentUser.longitude;
+    } else if (currentUser.locationGeo && Array.isArray(currentUser.locationGeo.coordinates) && currentUser.locationGeo.coordinates.length >= 2) {
+      // locationGeo stored as [lng, lat]
+      filters.lat = currentUser.locationGeo.coordinates[1];
+      filters.lng = currentUser.locationGeo.coordinates[0];
+    }
+  }
+  const response = await getAllDonationRequests(filters as any);
       // assume response.data is an array of DonationRequest-like objects
-  setRequests((response.data || []) as DonationRequest[]);
+  // support responses that return { records, summary } or plain array
+  const respData: any = response.data;
+  const data = respData && respData.records ? respData.records : respData;
+  setRequests((data || []) as DonationRequest[]);
       setError(null);
     } catch (err) {
       console.error('Error fetching donation requests:', err);
@@ -78,6 +107,46 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     fetchDonationRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
+
+  useEffect(() => {
+    const fetchHospitals = async () => {
+      try {
+        const res: any = await getAllHospitals();
+        setHospitals(res.data || []);
+      } catch (err) {
+        console.error('Failed to fetch hospitals', err);
+      }
+    };
+    fetchHospitals();
+  }, []);
+
+  // If user is a donor, attempt to get browser geolocation and refresh requests using it
+  useEffect(() => {
+    if (userRole !== 'donor') return;
+    if (!navigator.geolocation) {
+      console.warn('Geolocation not supported by browser');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null;
+        setBrowserLat(lat);
+        setBrowserLng(lng);
+        setBrowserAccuracy(acc);
+        // re-fetch donation requests with browser coords
+        fetchDonationRequests();
+      },
+      (err) => {
+        console.warn('Geolocation error', err.message);
+        // still fetch requests without coords
+        fetchDonationRequests();
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5000 }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userRole]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -356,7 +425,17 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       <option value="normal">Normal</option>
                     </select>
                     <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-                    <input name="location" value={formData.location} onChange={handleFormChange} placeholder="Location" className="border p-2 rounded" />
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Hospital (select from list)</label>
+                      <select name="hospitalId" value={formData.hospitalId || ''} onChange={handleFormChange} className="w-full border p-2 rounded mb-2">
+                        <option value="">Select hospital (optional)</option>
+                        {hospitals.map((h: any) => (
+                          <option key={h._id} value={h._id}>{h.hospitalName}{h.address ? ` — ${h.address}` : ''}</option>
+                        ))}
+                      </select>
+                      <label className="block text-sm text-gray-600 mb-1">Or enter location manually</label>
+                      <input name="location" value={formData.location} onChange={handleFormChange} placeholder="Location" className="border p-2 rounded w-full" />
+                    </div>
                   </div>
                   <div className="mt-4 flex justify-end space-x-2">
                     <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded border">Cancel</button>

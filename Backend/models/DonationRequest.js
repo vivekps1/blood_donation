@@ -4,6 +4,19 @@ const DonationRequestSchema = mongoose.Schema({
     requestId: {type:String}, 
     adminId: {type:String}, 
     hospitalId: {type:String}, 
+    // Snapshot of hospital details at time of request
+    hospitalName: { type: String },
+    hospitalAddress: { type: String },
+    hospitalPhone: { type: String },
+    hospitalLocation: { type: String },
+    hospitalLocationGeo: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: { type: [Number], default: void 0 }
+    },
     patientName: {type:String}, 
     bloodGroup: {type:String, require:true}, 
     bloodUnitsCount: {type:Number, require:true}, 
@@ -32,5 +45,8 @@ const DonationRequestSchema = mongoose.Schema({
     closedReason: { type: String }
 
 });
+
+// create 2dsphere index on hospitalLocationGeo to support geospatial queries
+DonationRequestSchema.index({ hospitalLocationGeo: '2dsphere' });
 
 module.exports = mongoose.model("DonationRequest", DonationRequestSchema); 
