@@ -1,6 +1,7 @@
 const CryptoJs = require("crypto-js");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const UserProfile = require('../models/UserProfile');
 const Donor = require("../models/Donor");
 const dotenv = require("dotenv");
 const Roles = require("../models/Roles");
@@ -11,8 +12,10 @@ dotenv.config();
 
 const registerUser = async (req, res) => {
 
+    // Determine role for new user. If not provided, default to 'donor'.
+    const roleToUse = req.body.role || 'donor';
     // Fetch roleId for the payload role (ensure roleId exists)
-    const payloadRoleDoc = await Roles.findOne({ userRole: req.body.role, roleId: { $ne: null } });
+    const payloadRoleDoc = await Roles.findOne({ userRole: roleToUse, roleId: { $ne: null } });
     if (!payloadRoleDoc || typeof payloadRoleDoc.roleId === 'undefined') {
         return res.status(401).json({ msg: "Invalid role specified" });
     }
@@ -36,7 +39,7 @@ const registerUser = async (req, res) => {
         const user = await newUser.save();
         
         // If the user's role is 'donor', also create a donor record
-        if (req.body.role === 'donor') {
+        if (roleToUse === 'donor') {
             const donorData = {
                 name: `${req.body.firstName} ${req.body.lastName}`,
                 email: req.body.email,
@@ -65,8 +68,22 @@ const registerUser = async (req, res) => {
         const { password, ...info } = user._doc;
         // attach readable userRole
         const roleDoc = await Roles.findOne({ roleId: user.roleId });
-        info.userRole = roleDoc ? roleDoc.userRole : undefined;
-        res.status(201).json({ user: info, accessToken });
+                info.userRole = roleDoc ? roleDoc.userRole : undefined;
+                // Attach additional safe fields
+                info.phoneNumber = user.phoneNumber;
+                info.bloodGroup = user.bloodGroup;
+                // Try to attach address from UserProfile if it exists
+                try {
+                    const profile = await UserProfile.findOne({ userId: user._id }).lean();
+                    if (profile && profile.address) {
+                        info.address = profile.address;
+                    }
+                } catch (e) {
+                    // ignore profile lookup errors
+                }
+                // Include admin contact from env if provided
+                info.adminEmail = process.env.ADMIN_EMAIL || 'admin@yourdomain.com';
+                res.status(200).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
     }

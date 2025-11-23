@@ -1,5 +1,5 @@
 const express = require("express") ; 
-const { createHospital, getAllHospitals, updateHospital, deleteHospital, getOneHospital, getHospitalStats } = require("../controllers/hospital");
+const { createHospital, getAllHospitals, updateHospital, deleteHospital, getOneHospital, getHospitalStats, getNearbyHospitals } = require("../controllers/hospital");
 const { verifyTokenAndAuthorization, verifyToken } = require("../middlewares/verifyToken");
 const router = express.Router() ; 
 
@@ -9,6 +9,9 @@ router.post("/", verifyTokenAndAuthorization,createHospital) ;
 
 //Get All Hospitals 
 router.get("/", verifyToken, getAllHospitals) ; 
+
+// Nearby hospitals (query: lat, lng, radius in meters)
+router.get('/nearby', verifyToken, getNearbyHospitals);
 
 // Update Hospitals 
 
@@ -21,6 +24,6 @@ router.delete("/:id", verifyTokenAndAuthorization,deleteHospital) ;
 router.get("/:id",verifyToken ,getOneHospital) ;
 
 //Hospital stats 
-router.get("/", getHospitalStats) ; 
+router.get("/stats", getHospitalStats) ; 
 
 module.exports= router

@@ -1,4 +1,5 @@
 const DonationRequest = require("../models/DonationRequest");
+const Hospital = require("../models/Hospital");
 const DonationHistory = require("../models/DonationHistory");
 const MedicalReport = require("../models/MedicalReport");
 const Hospital = require("../models/Hospital");
@@ -6,12 +7,10 @@ const Hospital = require("../models/Hospital");
 // Get all donation requests
 exports.getAllDonationRequests = async (req, res) => {
     try {
-        const { status } = req.query;
-        let query = {};
-        
+        const { status, lat, lng, radius } = req.query;
+        let match = {};
         if (status) {
-            // Allow passing status in either UPPER or lower case
-            query.status = typeof status === 'string' ? status.toUpperCase() : status;
+            match.status = typeof status === 'string' ? status.toUpperCase() : status;
         }
 
         // If request made by a non-admin user, restrict to donation requests
@@ -32,37 +31,99 @@ exports.getAllDonationRequests = async (req, res) => {
         console.log(query,"======");
         const donationRequests = await DonationRequest.find(query);
 
-        // If requesting closed donation requests, include summary statistics
-        if (query.status === 'COMPLETED') {
+        // If latitude/longitude provided, find nearby hospitals first and prioritize requests from them
+        if (lat && lng) {
+            const latitude = parseFloat(lat);
+            const longitude = parseFloat(lng);
+            const maxDistance = radius ? parseInt(radius) : 5000; // meters
+
+            // Find nearby hospitals (live data) ordered by proximity
+            const nearbyHospitals = await Hospital.aggregate([
+                {
+                    $geoNear: {
+                        near: { type: 'Point', coordinates: [longitude, latitude] },
+                        distanceField: 'distanceMeters',
+                        key: 'locationGeo',
+                        spherical: true,
+                        maxDistance: maxDistance
+                    }
+                },
+                { $project: { _id: 1, distanceMeters: 1 } }
+            ]);
+
+            // Build arrays of hospital ids (as strings) and distances to use inside aggregation
+            const hospitalIds = nearbyHospitals.map(h => String(h._id));
+            const hospitalDistances = nearbyHospitals.map(h => h.distanceMeters || null);
+
+            // Aggregate donation requests, compute index of hospitalId in nearby list and sort by that index
+            const agg = [];
+            if (Object.keys(match).length) agg.push({ $match: match });
+
+            // Add nearIndex (position in hospitalIds) and normalized index for sorting
+            agg.push({
+                $addFields: {
+                    nearIndex: { $indexOfArray: [hospitalIds, '$hospitalId'] }
+                }
+            });
+            agg.push({
+                $addFields: {
+                    nearIndexNormalized: { $cond: [{ $lt: ['$nearIndex', 0] }, 999999, '$nearIndex'] },
+                    hospitalDistance: { $cond: [{ $lt: ['$nearIndex', 0] }, null, { $arrayElemAt: [hospitalDistances, '$nearIndex'] }] }
+                }
+            });
+
+            // Lookup live hospital details for display
+            agg.push({
+                $lookup: {
+                    from: 'hospitals',
+                    localField: 'hospitalId',
+                    foreignField: '_id',
+                    as: 'hospitalDetails'
+                }
+            });
+            agg.push({ $unwind: { path: '$hospitalDetails', preserveNullAndEmptyArrays: true } });
+
+            // Sort requests: nearby hospitals first (nearIndexNormalized asc), then fallback by createdAt desc
+            agg.push({ $sort: { nearIndexNormalized: 1, requestDate: -1 } });
+
+            const results = await DonationRequest.aggregate(agg);
+
+            return res.status(200).json(results);
+        }
+
+        // Otherwise just return matched requests with hospital lookup
+        const agg = [];
+        if (Object.keys(match).length) agg.push({ $match: match });
+        agg.push({
+            $lookup: {
+                from: 'hospitals',
+                localField: 'hospitalId',
+                foreignField: '_id',
+                as: 'hospitalDetails'
+            }
+        });
+        agg.push({ $unwind: { path: '$hospitalDetails', preserveNullAndEmptyArrays: true } });
+
+        const donationRequests = await DonationRequest.aggregate(agg);
+        
+        // If requesting completed summary, compute summary
+        if (match.status === 'COMPLETED') {
             const totalDonations = donationRequests.length;
             const totalUnits = donationRequests.reduce((sum, r) => sum + (r.bloodUnitsCount || 0), 0);
             const uniqueHospitals = new Set(donationRequests.map(r => r.hospitalId).filter(Boolean)).size;
-
-            // Find related donationHistory entries by matching requestId (if present on requests)
             const requestIds = donationRequests.map(r => r.requestId).filter(Boolean);
             let eligibleReports = 0;
             if (requestIds.length > 0) {
-                // Get donation history entries that reference these requestIds
                 const histories = await DonationHistory.find({ requestId: { $in: requestIds } });
                 const reportIds = histories.map(h => h.reportId).filter(Boolean);
                 if (reportIds.length > 0) {
-                    // Count medical reports that are marked eligible
                     eligibleReports = await MedicalReport.countDocuments({ reportId: { $in: reportIds }, isEligible: true });
                 }
             }
-
-            return res.status(200).json({
-                records: donationRequests,
-                summary: {
-                    totalDonations,
-                    totalUnits,
-                    uniqueHospitals,
-                    eligibleReports
-                }
-            });
+            return res.status(200).json({ records: donationRequests, summary: { totalDonations, totalUnits, uniqueHospitals, eligibleReports } });
         }
 
-        res.status(200).json(donationRequests);
+        return res.status(200).json(donationRequests);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -84,8 +145,34 @@ exports.getDonationRequestById = async (req, res) => {
 // Create new donation request
 exports.createDonationRequest = async (req, res) => {
     try {
-        // set status and approved properly
-        const initialStatus = req.body.status ? String(req.body.status).toUpperCase() : 'PENDING';
+            // set status and approved properly
+            const initialStatus = req.body.status ? String(req.body.status).toUpperCase() : 'PENDING';
+
+            // If hospitalId provided, fetch hospital and snapshot key details
+            const payload = { ...req.body };
+            if (payload.hospitalId) {
+                try {
+                    const hosp = await Hospital.findById(payload.hospitalId).lean();
+                    if (hosp) {
+                        payload.hospitalName = hosp.hospitalName;
+                        payload.hospitalAddress = hosp.address;
+                        payload.hospitalPhone = hosp.phoneNumber;
+                        payload.hospitalLocation = hosp.location;
+                        if (hosp.locationGeo) payload.hospitalLocationGeo = hosp.locationGeo;
+                    }
+                } catch (e) {
+                    // ignore hospital lookup failures — proceed with request creation
+                    console.warn('Failed to lookup hospital for donation request', e.message || e);
+                }
+            }
+
+            const donationRequest = new DonationRequest({
+                ...payload,
+                requestDate: new Date(),
+                status: initialStatus,
+                approved: initialStatus === 'APPROVED',
+                availableDonors: 0 // Initialize with 0 available donors
+            });
 
         // Prepare body and, if hospitalId provided, snapshot hospital details
         const body = { ...req.body };

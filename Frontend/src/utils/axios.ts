@@ -59,7 +59,10 @@ export const getAllDonationRequests = (filters?: { status?: string; lat?: number
   }
   if (filters?.radius) params.append('radius', String(filters.radius));
   const qs = params.toString();
+<<<<<<< HEAD
   console.log('Fetching donation requests with query string:', qs);
+=======
+>>>>>>> 8961630d47cf210101c7925cfa3ec5e0a2e0df85
   return api.get(`/donation-requests${qs ? `?${qs}` : ''}`);
 };
 
