@@ -16,7 +16,15 @@ const HospitalSchema = new mongoose.Schema({
   city: { type: String, required: true },
   state: { type: String, required: true },
   pincode: { type: String, required: true },
-  isVerified: { type: Boolean, default: false }
+  isVerified: { type: Boolean, default: false },
+  hospitalLocationGeo: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: { type: [Number], default: void 0 }
+  }
 }, { timestamps: true });
 
 // Safeguard: ensure hospitalId stored as string if provided numerically.
@@ -26,5 +34,8 @@ HospitalSchema.pre('save', function(next) {
   }
   next();
 });
+
+// 2dsphere index for geospatial queries on hospital locations
+HospitalSchema.index({ hospitalLocationGeo: '2dsphere' });
 
 module.exports = mongoose.model("Hospital", HospitalSchema);

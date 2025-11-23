@@ -1,4 +1,5 @@
 import  React, { useState, useEffect } from 'react';
+import PlacesAutocomplete from './PlacesAutocomplete';
 import { Plus, Edit2, Trash, Save, X, MapPin, Phone, Mail } from 'lucide-react';
 import { getAllHospitals, createHospital, updateHospital, deleteHospital } from '../utils/axios';
 
@@ -15,6 +16,7 @@ interface Hospital {
   state: string;
   pincode: string;
   isVerified: boolean; // changed from string
+  hospitalLocationGeo?: { type: string; coordinates: number[] };
 }
 
 export const HospitalManagement: React.FC = () => {
@@ -67,18 +69,17 @@ export const HospitalManagement: React.FC = () => {
         // _id: Date.now().toString()
       };
       try {
-        await createHospital(newHospital);
-        setHospitals([...hospitals, newHospital]);
+        const res:any = await createHospital(newHospital);
+        // push the created hospital returned from server (with _id)
+        setHospitals([...hospitals, res.data]);
       } catch (err) {
         // handle error (show toast, etc)
       }
       setIsAdding(false);
     } else if (isEditing) {
       try {
-        await updateHospital(isEditing, editData as Hospital);
-        setHospitals(hospitals.map(h => 
-          h._id === isEditing ? { ...h, ...(editData as Hospital) } : h
-        ));
+        const res:any = await updateHospital(isEditing, editData as Hospital);
+        setHospitals(hospitals.map(h => h._id === isEditing ? res.data : h));
       } catch (err) {
         // handle error (show toast, etc)
       }
@@ -129,13 +130,11 @@ export const HospitalManagement: React.FC = () => {
               onChange={(e) => setEditData({...editData, hospitalName: e.target.value})}
               className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
-            <input
-              type="text"
-              placeholder="Address"
-              value={editData.address || ''}
-              onChange={(e) => setEditData({...editData, address: e.target.value})}
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+                <PlacesAutocomplete
+                  value={editData.address as string}
+                  placeholder="Address"
+                  onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })}
+                />
             <input
               type="tel"
               placeholder="Phone Number"
@@ -229,6 +228,7 @@ export const HospitalManagement: React.FC = () => {
                   <div className="grid md:grid-cols-2 gap-4">
                     <input type="text" placeholder="Hospital Name" value={editData.hospitalName || ''} onChange={e => setEditData({...editData, hospitalName: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <input type="text" placeholder="Address" value={editData.address || ''} onChange={e => setEditData({...editData, address: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                      <PlacesAutocomplete value={editData.address as string} placeholder="Address" onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })} />
                     <input type="tel" placeholder="Phone Number" value={editData.phoneNumber || ''} onChange={e => setEditData({...editData, phoneNumber: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <input type="email" placeholder="Email" value={editData.email || ''} onChange={e => setEditData({...editData, email: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <input type="number" placeholder="Reg No" value={editData.regNo || ''} onChange={e => setEditData({...editData, regNo: parseInt(e.target.value)})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />

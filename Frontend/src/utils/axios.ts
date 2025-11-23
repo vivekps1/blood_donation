@@ -7,6 +7,7 @@ export const getAllHospitals = () => api.get('/hospitals');
 export const createHospital = (hospitalData: any) => api.post('/hospitals', hospitalData);
 export const updateHospital = (id: string, hospitalData: any) => api.put(`/hospitals/${id}`, hospitalData);
 export const deleteHospital = (id: string) => api.delete(`/hospitals/${id}`);
+export const getNearbyHospitals = (lat: number, lng: number, radiusMeters = 5000) => api.get(`/hospitals/nearby?lat=${lat}&lng=${lng}&radius=${radiusMeters}`);
 import axios from 'axios';
 
 // Create an Axios instance with base URL
@@ -49,24 +50,22 @@ export const updateDonor = (id: any, donorData: any) => api.put(`/donors/${id}`,
 export const deleteDonor = (id: any) => api.delete(`/donors/${id}`);
 
 // Donation Request APIs
-export const getAllDonationRequests = (filters?: { status?: string }) => {
-  const queryParams = filters?.status && filters.status !== 'all' 
-    ? `?status=${filters.status}` 
-    : '';
-  return api.get(`/donation-requests${queryParams}`);
+export const getAllDonationRequests = (filters?: { status?: string; lat?: number; lng?: number; radius?: number }) => {
+  const params = new URLSearchParams();
+  if (filters?.status && filters.status !== 'all') params.append('status', String(filters.status));
+  if (typeof filters?.lat !== 'undefined' && typeof filters?.lng !== 'undefined') {
+    params.append('lat', String(filters.lat));
+    params.append('lng', String(filters.lng));
+  }
+  if (filters?.radius) params.append('radius', String(filters.radius));
+  const qs = params.toString();
+  console.log('Fetching donation requests with query string:', qs);
+  return api.get(`/donation-requests${qs ? `?${qs}` : ''}`);
 };
 
 export const getDonationRequestById = (id: string) => api.get(`/donation-requests/${id}`);
 
-export const createDonationRequest = (requestData: {
-  patientName: string;
-  bloodGroup: string;
-  bloodUnitsCount: number;
-  medicalCondition: string;
-  priority: string;
-  requiredDate: Date;
-  location: string;
-}) => api.post('/donation-requests', requestData);
+export const createDonationRequest = (requestData: any) => api.post('/donation-requests', requestData);
 
 export const updateDonationRequest = (id: string, requestData: {
   status?: string;

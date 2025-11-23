@@ -6,7 +6,9 @@ import {
   createDonationRequest,
   updateDonationRequest,
   volunteerForDonation,
+  getAllHospitals,
 } from '../utils/axios';
+
 
 interface DonationRequest {
   requestId: string;
@@ -46,6 +48,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     requiredDate: '',
     location: '',
   });
+
+  
   const [volunteerModalOpen, setVolunteerModalOpen] = useState<boolean>(false);
   const [volunteerForm, setVolunteerForm] = useState<any>({ expectedDonationTime: '', contact: '', message: '' });
   const [currentVolunteerRequestId, setCurrentVolunteerRequestId] = useState<string | null>(null);
@@ -55,7 +59,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const [closeOption, setCloseOption] = useState<'closed' | 'fulfilled'>('closed');
   const [currentCloseRequestId, setCurrentCloseRequestId] = useState<string | null>(null);
   const [currentCloseVolunteers, setCurrentCloseVolunteers] = useState<any[]>([]);
-  const [selectedFulfillVolunteer, setSelectedFulfillVolunteer] = useState<any>(null);
+  const [selectedFulfillVolunteers, setSelectedFulfillVolunteers] = useState<any[]>([]);
+  const [hospitals, setHospitals] = useState<any[]>([]);
 
   const fetchDonationRequests = async () => {
     try {
@@ -76,6 +81,16 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
   useEffect(() => {
     fetchDonationRequests();
+    // fetch hospitals for request creation
+    const fetchHospitals = async () => {
+      try {
+        const res:any = await getAllHospitals();
+        setHospitals(res.data || []);
+      } catch (err) {
+        console.warn('Failed to load hospitals', err);
+      }
+    };
+    fetchHospitals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
@@ -288,7 +303,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const openCloseModal = (requestId: string, volunteers: any[]) => {
     setCurrentCloseRequestId(requestId);
     setCurrentCloseVolunteers(volunteers || []);
-    setSelectedFulfillVolunteer(null);
+    setSelectedFulfillVolunteers([]);
     setCloseOption('closed');
     setCloseModalOpen(true);
   };
@@ -301,15 +316,20 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         payload.status = 'CLOSED';
       } else {
         // fulfilled
-        if (!selectedFulfillVolunteer) return alert('Please select a volunteer who donated');
+        if (!selectedFulfillVolunteers || selectedFulfillVolunteers.length === 0) return alert('Please select at least one volunteer who donated');
         payload.status = 'COMPLETED';
-        payload.fulfilledBy = selectedFulfillVolunteer.donorId || selectedFulfillVolunteer.donorId || selectedFulfillVolunteer.donorId;
-        payload.fulfilledByName = selectedFulfillVolunteer.donorName || selectedFulfillVolunteer.donorName || selectedFulfillVolunteer.donorName;
+        // provide both array fields and a single fallback for backward compatibility
+        const fulfilledByList = selectedFulfillVolunteers.map((s) => s.donorId || s.donorId);
+        const fulfilledByNames = selectedFulfillVolunteers.map((s) => s.donorName || s.donorId || '');
+        payload.fulfilledByList = fulfilledByList;
+        payload.fulfilledByNames = fulfilledByNames;
+        payload.fulfilledBy = fulfilledByList[0] || '';
+        payload.fulfilledByName = fulfilledByNames[0] || '';
       }
       await updateDonationRequest(currentCloseRequestId, payload as any);
       setCloseModalOpen(false);
       setCurrentCloseRequestId(null);
-      setSelectedFulfillVolunteer(null);
+      setSelectedFulfillVolunteers([]);
       await fetchDonationRequests();
       alert('Request updated successfully');
     } catch (err) {
@@ -356,7 +376,22 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       <option value="normal">Normal</option>
                     </select>
                     <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-                    <input name="location" value={formData.location} onChange={handleFormChange} placeholder="Location" className="border p-2 rounded" />
+                    {/* Select an existing hospital instead of free-text location */}
+                    <select
+                      name="hospitalId"
+                      value={formData.hospitalId || ''}
+                      onChange={(e) => setFormData((prev: any) => ({
+                        ...prev,
+                        hospitalId: e.target.value || undefined,
+                        location: hospitals.find(h => h._id === e.target.value)?.address || prev.location,
+                      }))}
+                      className="border p-2 rounded"
+                    >
+                      <option value="">Select hospital (optional)</option>
+                      {hospitals.map((h) => (
+                        <option key={h._id} value={h._id}>{h.hospitalName} - {h.address}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="mt-4 flex justify-end space-x-2">
                     <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded border">Cancel</button>
@@ -435,26 +470,40 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                 </label>
               </div>
 
-              {closeOption === 'fulfilled' && (
-                <div className="border rounded p-3 max-h-64 overflow-auto">
-                  {currentCloseVolunteers && currentCloseVolunteers.length > 0 ? (
-                    currentCloseVolunteers.map((v: any, idx: number) => (
-                      <label key={idx} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
-                        <input type="radio" name="fulfillVolunteer" checked={selectedFulfillVolunteer === v} onChange={() => setSelectedFulfillVolunteer(v)} />
-                        <div>
-                          <div className="font-semibold">{v.donorName || v.donorId || 'Anonymous'}</div>
-                          <div className="text-sm text-gray-600">Contact: {v.contact || 'N/A'}</div>
-                        </div>
-                      </label>
-                    ))
-                  ) : (
-                    <div>No volunteers available to mark as fulfilled.</div>
-                  )}
-                </div>
-              )}
+                    {closeOption === 'fulfilled' && (
+                      <div className="border rounded p-3 max-h-64 overflow-auto">
+                        {currentCloseVolunteers && currentCloseVolunteers.length > 0 ? (
+                          currentCloseVolunteers.map((v: any, idx: number) => {
+                            const checked = selectedFulfillVolunteers.some((s) => String(s.donorId) === String(v.donorId));
+                            return (
+                              <label key={idx} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                                <input
+                                  type="checkbox"
+                                  name={`fulfillVolunteer_${idx}`}
+                                  checked={checked}
+                                  onChange={() => {
+                                    if (checked) {
+                                      setSelectedFulfillVolunteers((prev) => prev.filter((p) => String(p.donorId) !== String(v.donorId)));
+                                    } else {
+                                      setSelectedFulfillVolunteers((prev) => [...prev, v]);
+                                    }
+                                  }}
+                                />
+                                <div>
+                                  <div className="font-semibold">{v.donorName || v.donorId || 'Anonymous'}</div>
+                                  <div className="text-sm text-gray-600">Contact: {v.contact || 'N/A'}</div>
+                                </div>
+                              </label>
+                            );
+                          })
+                        ) : (
+                          <div>No volunteers available to mark as fulfilled.</div>
+                        )}
+                      </div>
+                    )}
             </div>
             <div className="mt-4 flex justify-end space-x-2">
-              <button onClick={() => { setCloseModalOpen(false); setSelectedFulfillVolunteer(null); setCurrentCloseRequestId(null); }} className="px-4 py-2 rounded border">Cancel</button>
+              <button onClick={() => { setCloseModalOpen(false); setSelectedFulfillVolunteers([]); setCurrentCloseRequestId(null); }} className="px-4 py-2 rounded border">Cancel</button>
               <button onClick={confirmCloseRequest} className="px-4 py-2 rounded bg-yellow-600 text-white">Confirm</button>
             </div>
           </div>
@@ -573,13 +622,13 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                     </button>
                   )}
 
-                  {userRole === 'admin' && ((request.status || '').toLowerCase() === 'approved') && (
+                  {userRole === 'admin' && ((request.status || '').toLowerCase() !== 'completed') && (
                     <button onClick={() => openCloseModal((request as any)._id || request.requestId, (request as any).volunteers || [])} className="bg-yellow-600 text-white px-3 py-2 rounded-lg hover:bg-yellow-700 text-sm">
                       Close
                     </button>
                   )}
 
-                  {userRole === 'donor' && ((request.status || '').toLowerCase() === 'approved') && (
+                  {userRole === 'donor' && (
                     hasUserVolunteered(request) ? (
                       <button disabled className="bg-gray-400 text-white px-3 py-2 rounded-lg text-sm">Already volunteered</button>
                     ) : (
