@@ -35,7 +35,25 @@ api.interceptors.request.use(config => {
 
 
 // Example: GET all donors
-export const getAllDonors = (page = 1, size = 10) => api.get(`/donors?page=${page}&size=${size}`);
+export const getAllDonors = (
+  page = 1,
+  size = 10,
+  sortField?: string,
+  sortOrder?: string,
+  search?: string,
+  bloodType?: string,
+  eligibility?: string
+) => {
+  const params = new URLSearchParams();
+  params.append('page', String(page));
+  params.append('size', String(size));
+  if (sortField) params.append('sortField', sortField);
+  if (sortOrder) params.append('sortOrder', sortOrder);
+  if (search) params.append('search', search);
+  if (bloodType && bloodType !== 'all') params.append('bloodType', bloodType);
+  if (eligibility && eligibility !== 'all') params.append('eligibility', eligibility);
+  return api.get(`/donors?${params.toString()}`);
+};
 
 // Example: GET one donor by ID
 export const getDonorById = (id: string) => api.get(`/donors/${id}`);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, MapPin, Phone, Mail, Edit2, X, Save } from 'lucide-react';
+import { Users, MapPin, Phone, Mail, Edit2, X, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Donor } from '../types';
 import { getAllDonors, getDonorsStats, updateDonor } from '../utils/axios';
 
@@ -24,22 +24,27 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   const [sortTempOrder, setSortTempOrder] = useState(sortOrder);
   // Modal state for viewing/editing a donor
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
-  const [donorForm, setDonorForm] = useState<Partial<Donor>>({});
+  const [donorForm, setDonorForm] = useState<Partial<Donor> & { firstName?: string; lastName?: string; dateofBirth?: string }>({});
   const [saving, setSaving] = useState(false);
+  const [modalErrors, setModalErrors] = useState<Record<string, string>>({});
 
   const openDonorModal = (donor: Donor) => {
     setSelectedDonor(donor);
     setDonorForm({
-      name: donor.name,
+      // split name into first/last for editing
+      firstName: donor.name ? donor.name.split(' ')[0] : '',
+      lastName: donor.name ? donor.name.split(' ').slice(1).join(' ') : '',
       email: donor.email,
-      phoneNumber: donor.phoneNumber,
+      phoneNumber: donor.phoneNumber ? String(donor.phoneNumber).replace(/\D/g, '').slice(-10) : '',
       bloodGroup: donor.bloodGroup,
       height: donor.height,
       weight: donor.weight,
       address: donor.address || '',
       diseases: donor.diseases || '',
+      dateofBirth: (donor as any).dateofBirth || '',
       eligibility: donor.eligibility || '',
     });
+    setModalErrors({});
   };
 
   const closeDonorModal = () => {
@@ -48,7 +53,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
     setSaving(false);
   };
 
-  const handleDonorChange = (field: keyof Donor, value: any) => {
+  const handleDonorChange = (field: string, value: any) => {
     setDonorForm(prev => ({ ...prev, [field]: value }));
   };
 
@@ -56,17 +61,48 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
     if (!selectedDonor) return;
     setSaving(true);
     try {
+      // validate modal fields (firstName, email, phone, bloodGroup, dob)
+      const errors: Record<string, string> = {};
+      const firstName = (donorForm.firstName || '').trim();
+      const lastName = (donorForm.lastName || '').trim();
+      const email = (donorForm.email || '').trim();
+      const phoneRaw = String(donorForm.phoneNumber || '').replace(/\D/g, '');
+      const bloodGroup = (donorForm.bloodGroup || '').trim();
+      const dob = donorForm.dateofBirth || '';
+
+      if (!firstName) errors.firstName = 'First name is required.';
+      const emailOk = /^[^\s@]+@[^\s@]+\.(?:co|com|in|net)$/i.test(email);
+      if (!emailOk) errors.email = 'Enter a valid email with domain .co, .com, .in or .net';
+      if (!/^\d{10}$/.test(phoneRaw)) errors.phoneNumber = 'Enter a valid 10-digit phone number';
+      if (!bloodGroup) errors.bloodGroup = 'Please select a blood group';
+      if (dob) {
+        const dobDate = new Date(dob);
+        const today = new Date();
+        let age = today.getFullYear() - dobDate.getFullYear();
+        const m = today.getMonth() - dobDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) age--;
+        if (age < 18) errors.dateofBirth = 'Donor must be at least 18 years old';
+      }
+
+      if (Object.keys(errors).length > 0) {
+        setModalErrors(errors);
+        setSaving(false);
+        return;
+      }
+
       const payload: any = {
-        name: donorForm.name,
-        email: donorForm.email,
-        phoneNumber: donorForm.phoneNumber,
-        bloodGroup: donorForm.bloodGroup,
+        name: `${firstName}${lastName ? ' ' + lastName : ''}`,
+        email,
+        // save phoneNumber with +91 prefix
+        phoneNumber: `+91${phoneRaw}`,
+        bloodGroup,
         height: donorForm.height,
         weight: donorForm.weight,
         address: donorForm.address,
         diseases: donorForm.diseases,
         eligibility: donorForm.eligibility,
       };
+      if (dob) payload.dateofBirth = dob;
       Object.keys(payload).forEach(k => (payload[k] === undefined || payload[k] === '') && delete payload[k]);
       const resp = await updateDonor(selectedDonor._id, payload);
   const updated: Partial<Donor> = resp.data as any;
@@ -80,8 +116,16 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   useEffect(() => {
     const fetchDonors = async () => {
       try {
-        // Pass page and size to backend
-        const response = await getAllDonors(currentPage, pageSize);
+        // Pass page, size, sort and filters to backend
+        const response = await getAllDonors(
+          currentPage,
+          pageSize,
+          sortField || undefined,
+          sortOrder || undefined,
+          appliedFilters.search,
+          appliedFilters.bloodType,
+          appliedFilters.eligibility
+        );
         const data = response.data as { donors: Donor[]; totalPages?: number };
         setDonors(data.donors);
         setTotalPages(data.totalPages || 1);
@@ -90,7 +134,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       }
     };
     fetchDonors();
-  }, [currentPage, pageSize]);
+  }, [currentPage, pageSize, sortField, sortOrder, appliedFilters.search, appliedFilters.bloodType, appliedFilters.eligibility]);
 
   // Fetch donor stats and donation history stats
   useEffect(() => {
@@ -120,31 +164,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   }, [showSortMenu]);
 
 
-  // Use backend pagination, but apply filters on current page
-  let paginatedDonors = donors.filter(donor => {
-    const matchesSearch = appliedFilters.search === '' || `${donor.name}`.toLowerCase().includes(appliedFilters.search.toLowerCase()) || donor.email.toLowerCase().includes(appliedFilters.search.toLowerCase());
-    const matchesBloodType = appliedFilters.bloodType === 'all' || donor.bloodGroup === appliedFilters.bloodType;
-    const eligibilityValue = donor.eligibility || 'N/A';
-    const matchesEligibility = appliedFilters.eligibility === 'all' ||
-      (appliedFilters.eligibility === 'eligible' && eligibilityValue === 'eligible') ||
-      (appliedFilters.eligibility === 'ineligible' && eligibilityValue === 'ineligible');
-    return matchesSearch && matchesBloodType && matchesEligibility;
-  });
-  
-  // Sort donors
-  if (sortField) {
-    paginatedDonors = [...paginatedDonors].sort((a, b) => {
-      if (sortField === 'name') {
-        if (sortOrder === 'asc') return a.name.localeCompare(b.name);
-        else return b.name.localeCompare(a.name);
-      }
-      if (sortField === 'bloodGroup') {
-        if (sortOrder === 'asc') return a.bloodGroup.localeCompare(b.bloodGroup);
-        else return b.bloodGroup.localeCompare(a.bloodGroup);
-      }
-      return 0;
-    });
-  }
+  // Use server-side filtering/sorting/pagination; donors are provided by the API
+  const paginatedDonors = donors;
 
   // Update sort button label to reflect current sort field and order
   // Removed unused sortLabel constant
@@ -194,7 +215,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
             className="border rounded px-3 py-2 w-72"
             placeholder="Search by name or email"
             value={appliedFilters.search}
-            onChange={e => setAppliedFilters(f => ({ ...f, search: e.target.value }))}
+            onChange={e => { setAppliedFilters(f => ({ ...f, search: e.target.value })); setCurrentPage(1); }}
             onKeyDown={e => { if (e.key === 'Enter') setCurrentPage(1); }}
           />
 
@@ -202,7 +223,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
           <select
             className="border rounded px-3 py-2"
             value={appliedFilters.bloodType}
-            onChange={e => setAppliedFilters(f => ({ ...f, bloodType: e.target.value }))}
+            onChange={e => { setAppliedFilters(f => ({ ...f, bloodType: e.target.value })); setCurrentPage(1); }}
           >
             <option value="all">All Blood Types</option>
             <option value="A+">A+</option>
@@ -219,7 +240,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
           <select
             className="border rounded px-3 py-2"
             value={appliedFilters.eligibility}
-            onChange={e => setAppliedFilters(f => ({ ...f, eligibility: e.target.value }))}
+            onChange={e => { setAppliedFilters(f => ({ ...f, eligibility: e.target.value })); setCurrentPage(1); }}
           >
             <option value="all">All Eligibility</option>
             <option value="eligible">Eligible</option>
@@ -229,7 +250,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
           {/* Clear Filters Button */}
           <button
             className="px-4 py-2 bg-gray-100 rounded border hover:bg-gray-200"
-            onClick={() => setAppliedFilters({ bloodType: 'all', eligibility: 'all', search: '' })}
+            onClick={() => { setAppliedFilters({ bloodType: 'all', eligibility: 'all', search: '' }); setCurrentPage(1); }}
           >
             Clear Filters
           </button>
@@ -305,6 +326,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                         onClick={() => {
                           setSortField(sortTempField);
                           setSortOrder(sortTempOrder);
+                          setCurrentPage(1);
                           setSortModalOpen(false);
                         }}
                       >
@@ -317,6 +339,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                           setSortOrder('asc');
                           setSortTempField('');
                           setSortTempOrder('asc');
+                          setCurrentPage(1);
                           setSortModalOpen(false);
                         }}
                       >
@@ -376,7 +399,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                         <span className="text-sm">{donor.address}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                       <div>
                         <p className="text-gray-500">Total Donations</p>
                         <p className="font-semibold text-blue-600">{totalDonations}</p>
@@ -386,8 +409,12 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                         <p className="font-medium">{lastDonationDate}</p>
                       </div>
                       <div>
+                        <p className="text-gray-500">Height</p>
+                        <p className="font-medium">{donor.height ? `${donor.height} cm` : '-'}</p>
+                      </div>
+                      <div>
                         <p className="text-gray-500">Weight</p>
-                        <p className="font-medium">{donor.weight} kg</p>
+                        <p className="font-medium">{donor.weight ? `${donor.weight} kg` : '-'}</p>
                       </div>
                       <div>
                         <p className="text-gray-500">Last Status</p>
@@ -407,7 +434,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"
                       onClick={() => openDonorModal(donor)}
                     >
-                      <Edit2 className="w-4 h-4" /> View Profile
+                      <Edit2 className="w-4 h-4" /> Edit Profile
                     </button>
                   )}
                 </div>
@@ -430,11 +457,20 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
           <div className="p-6 space-y-6">
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Name</label>
+                <label className="text-sm font-medium text-gray-700">First Name</label>
                 <input
                   className="mt-1 w-full border rounded px-3 py-2"
-                  value={donorForm.name || ''}
-                  onChange={e => handleDonorChange('name', e.target.value)}
+                  value={donorForm.firstName || ''}
+                  onChange={e => { handleDonorChange('firstName', e.target.value); setModalErrors(prev => ({ ...prev, firstName: '' })); }}
+                />
+                {modalErrors.firstName && <div className="text-sm text-red-600 mt-2">{modalErrors.firstName}</div>}
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Last Name</label>
+                <input
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.lastName || ''}
+                  onChange={e => handleDonorChange('lastName', e.target.value)}
                 />
               </div>
               <div>
@@ -443,27 +479,30 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                   type="email"
                   className="mt-1 w-full border rounded px-3 py-2"
                   value={donorForm.email || ''}
-                  onChange={e => handleDonorChange('email', e.target.value)}
+                  onChange={e => { handleDonorChange('email', e.target.value); setModalErrors(prev => ({ ...prev, email: '' })); }}
                 />
+                {modalErrors.email && <div className="text-sm text-red-600 mt-2">{modalErrors.email}</div>}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700">Phone Number</label>
                 <input
                   className="mt-1 w-full border rounded px-3 py-2"
                   value={donorForm.phoneNumber || ''}
-                  onChange={e => handleDonorChange('phoneNumber', e.target.value)}
+                  onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0,10); handleDonorChange('phoneNumber', digits); setModalErrors(prev => ({ ...prev, phoneNumber: '' })); }}
                 />
+                {modalErrors.phoneNumber && <div className="text-sm text-red-600 mt-2">{modalErrors.phoneNumber}</div>}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700">Blood Group</label>
                 <select
                   className="mt-1 w-full border rounded px-3 py-2"
                   value={donorForm.bloodGroup || ''}
-                  onChange={e => handleDonorChange('bloodGroup', e.target.value)}
+                  onChange={e => { handleDonorChange('bloodGroup', e.target.value); setModalErrors(prev => ({ ...prev, bloodGroup: '' })); }}
                 >
                   <option value="">Select</option>
                   {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
                 </select>
+                {modalErrors.bloodGroup && <div className="text-sm text-red-600 mt-2">{modalErrors.bloodGroup}</div>}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700">Height (cm)</label>
@@ -480,6 +519,16 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                   value={donorForm.weight || ''}
                   onChange={e => handleDonorChange('weight', e.target.value)}
                 />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Date of Birth</label>
+                <input
+                  type="date"
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  value={donorForm.dateofBirth || ''}
+                  onChange={e => { handleDonorChange('dateofBirth', e.target.value); setModalErrors(prev => ({ ...prev, dateofBirth: '' })); }}
+                />
+                {modalErrors.dateofBirth && <div className="text-sm text-red-600 mt-2">{modalErrors.dateofBirth}</div>}
               </div>
               <div className="md:col-span-2">
                 <label className="text-sm font-medium text-gray-700">Address</label>
@@ -534,22 +583,26 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       </div>
     )}
 
-    {/* Pagination Controls */}
-    <div className="flex justify-center items-center mt-6">
+    {/* Pagination Controls (arrow buttons, no 'Page' text) */}
+    <div className="flex justify-center items-center mt-6 gap-4">
       <button
-        className="px-4 py-2 mx-1 bg-gray-200 rounded disabled:opacity-50"
+        className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
         onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-        disabled={currentPage === 1 || paginatedDonors.length < pageSize}
+        disabled={currentPage === 1}
+        aria-label="Previous page"
       >
-        Previous
+        <ChevronLeft className="w-5 h-5" />
       </button>
-      <span className="mx-2">Page {currentPage} of {totalPages}</span>
+
+      <span className="mx-2 font-medium">{currentPage} of {totalPages}</span>
+
       <button
-        className="px-4 py-2 mx-1 bg-gray-200 rounded disabled:opacity-50"
+        className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
         onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-        disabled={currentPage === totalPages || paginatedDonors.length < pageSize}
+        disabled={currentPage === totalPages}
+        aria-label="Next page"
       >
-        Next
+        <ChevronRight className="w-5 h-5" />
       </button>
     </div>
   </div>

@@ -39,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user, onLogout, onProfileC
           <div
             className="flex items-center space-x-3 cursor-pointer group"
             onClick={handleProfileClick}
-            title="View Profile"
+            title="Edit Profile"
           >
             <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center group-hover:bg-gray-400">
               <User className="w-5 h-5 text-gray-600" />

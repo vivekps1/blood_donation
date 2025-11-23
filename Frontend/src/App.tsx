@@ -104,6 +104,9 @@ function App() {
               bloodGroup: currentUser.bloodGroup || currentUser.bloodGroup || '',
               address: currentUser.address || '',
               adminEmail: currentUser.adminEmail || '',
+              height: currentUser.height ?? currentUser?.profile?.height ?? '',
+              weight: currentUser.weight ?? currentUser?.profile?.weight ?? '',
+              dateofBirth: currentUser.dateofBirth || currentUser.dateOfBirth || '',
               role: currentUser.role || 'user',
               photo: currentUser.photo || '',
               healthReport: currentUser.healthReport || undefined,
@@ -117,6 +120,9 @@ function App() {
                 ...(data.phone ? { phoneNumber: data.phone } : {}),
                 ...(data.email ? { email: data.email } : {}),
                 ...(data.address ? { address: data.address } : {}),
+                ...(data.height ? { height: data.height } : {}),
+                ...(data.weight ? { weight: data.weight } : {}),
+                ...(data.dateofBirth ? { dateofBirth: data.dateofBirth } : {}),
               }));
             }}
           />

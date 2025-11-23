@@ -32,6 +32,8 @@ const registerUser = async (req, res) => {
         phoneNumber: req.body.phoneNumber,
         bloodGroup : req.body.bloodGroup, 
         dateofBirth: req.body.dateofBirth ,
+        height: req.body.height || null,
+        weight: req.body.weight || null,
         roleId : payloadRoleDoc.roleId, 
         isActive: req.body.isActive
     });

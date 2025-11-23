@@ -13,6 +13,6 @@ const DonorSchema = mongoose.Schema({
     age: {type:Number, require:true}, 
     bloodPressure:{type:Number, require:true}, 
     status:{type:Number, default:0}
-})
+}, { timestamps: true })
 
 module.exports = mongoose.model("Donor", DonorSchema) ;
