@@ -101,6 +101,9 @@ function App() {
               lastName: currentUser.lastName || '',
               email: currentUser.email || '',
               phone: currentUser.phoneNumber || currentUser.phone || '',
+              bloodGroup: currentUser.bloodGroup || currentUser.bloodGroup || '',
+              address: currentUser.address || '',
+              adminEmail: currentUser.adminEmail || '',
               role: currentUser.role || 'user',
               photo: currentUser.photo || '',
               healthReport: currentUser.healthReport || undefined,
@@ -113,6 +116,7 @@ function App() {
                 ...(data.lastName ? { lastName: data.lastName } : {}),
                 ...(data.phone ? { phoneNumber: data.phone } : {}),
                 ...(data.email ? { email: data.email } : {}),
+                ...(data.address ? { address: data.address } : {}),
               }));
             }}
           />

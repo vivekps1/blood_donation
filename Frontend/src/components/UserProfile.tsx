@@ -8,6 +8,9 @@ interface UserData {
   lastName: string;
   email: string;
   phone: string;
+  bloodGroup?: string;
+  address?: string;
+  adminEmail?: string;
   photo?: string;
   role: 'donor' | 'admin' | 'user';
   healthReport?: {
@@ -34,6 +37,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
     lastName: user.lastName,
     phone: user.phone,
     email: user.email,
+    address: (user as any).address || '',
   });
   const [showHealthHistory, setShowHealthHistory] = useState(false);
 
@@ -44,19 +48,18 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   ];
 
   const handleSave = () => {
-    const payload = {
+    const payload: any = {
       firstName: editData.firstName,
       lastName: editData.lastName,
-      phoneNumber: editData.phone,
-      email: editData.email,
+      // Only allow updating first/last name and address via this UI
+      address: editData.address,
     };
     updateUserProfile(user.id, payload)
       .then(() => {
         onUpdate?.({
           firstName: editData.firstName,
           lastName: editData.lastName,
-          phone: editData.phone,
-          email: editData.email,
+          address: editData.address,
         });
         setIsEditing(false);
       })
@@ -117,6 +120,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       {/* Profile Information */}
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <h2 className="text-lg font-semibold mb-4">Personal Information</h2>
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-100 text-yellow-800 rounded">
+          To change <strong>email</strong>, <strong>phone</strong>, or <strong>blood group</strong>, contact admin at{' '}
+          <a className="underline font-medium" href={`mailto:${user.adminEmail || 'admin@yourdomain.com'}`}>
+            {user.adminEmail || 'admin@yourdomain.com'}
+          </a>
+        </div>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
@@ -153,34 +162,39 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-            {isEditing ? (
-              <input
-                type="tel"
-                value={editData.phone}
-                onChange={(e) => setEditData({...editData, phone: e.target.value})}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            ) : (
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <Phone className="w-4 h-4 text-gray-400" />
-                <span>{user.phone}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+              <Phone className="w-4 h-4 text-gray-400" />
+              <span>{user.phone}</span>
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+              <Mail className="w-4 h-4 text-gray-400" />
+              <span>{user.email}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+              <span className="text-gray-700">{user.bloodGroup || '-'}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
             {isEditing ? (
               <input
-                type="email"
-                value={editData.email}
-                onChange={(e) => setEditData({...editData, email: e.target.value})}
+                type="text"
+                value={editData.address}
+                onChange={(e) => setEditData({...editData, address: e.target.value})}
                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <Mail className="w-4 h-4 text-gray-400" />
-                <span>{user.email}</span>
+                <span>{user.address || '-'}</span>
               </div>
             )}
           </div>
