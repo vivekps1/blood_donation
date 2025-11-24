@@ -1,6 +1,8 @@
-import  React, { useState, useEffect, useRef } from 'react';
+import  React, { useState, useEffect,useRef } from 'react';
+import PlacesAutocomplete from './PlacesAutocomplete';
 import { Plus, Edit2, Trash, Save, X, MapPin, Phone, Mail } from 'lucide-react';
-import { getAllHospitals, createHospital, updateHospital, deleteHospital, getNearbyHospitals } from '../utils/axios';
+import { getAllHospitals, createHospital, updateHospital, deleteHospital } from '../utils/axios';
+import { isValidEmail, isValidPhone, normalizePhone } from '../utils/validation';
 
 interface Hospital {
   _id: string;
@@ -10,15 +12,14 @@ interface Hospital {
   latitude?: number;
   longitude?: number;
   locationGeo?: { type: string; coordinates: number[] };
-  regNo: number;
+  regNo: string;
   contactName: string;
   email: string;
   phoneNumber: string;
   address: string;
-  city: string;
-  state: string;
   pincode: string;
   isVerified: boolean; // changed from string
+  hospitalLocationGeo?: { type: string; coordinates: number[] };
 }
 
 export const HospitalManagement: React.FC = () => {
@@ -44,9 +45,8 @@ export const HospitalManagement: React.FC = () => {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editData, setEditData] = useState<Partial<Hospital>>({});
-  const [filterLat, setFilterLat] = useState<string>('');
-  const [filterLng, setFilterLng] = useState<string>('');
-  const [filterRadius, setFilterRadius] = useState<number>(5000);
+  const [emailError, setEmailError] = useState<string>('');
+  const [phoneError, setPhoneError] = useState<string>('');
   const addPlaceRef = useRef<HTMLInputElement | null>(null);
   const editPlaceRef = useRef<HTMLInputElement | null>(null);
 
@@ -93,35 +93,29 @@ export const HospitalManagement: React.FC = () => {
       location: '',
       latitude: '',
       longitude: '',
-      regNo: 0,
+      regNo: '',
       contactName: '',
       email: '',
       phoneNumber: '',
       address: '',
-      city: '',
-      state: '',
       pincode: '',
       isVerified: false,
     } as any);
+    setEmailError('');
+    setPhoneError('');
   };
 
-  const handleFindNearby = async () => {
-    if (!filterLat || !filterLng) {
-      alert('Please provide latitude and longitude to search nearby');
-      return;
-    }
-    try {
-      const res: any = await getNearbyHospitals(parseFloat(filterLat), parseFloat(filterLng), filterRadius);
-      setHospitals(res.data);
-    } catch (err) {
-      // handle error
-      console.error(err);
-    }
-  }
 
   const handleSave = async () => {
     if (isAdding) {
-      // Build payload from editData (Google Places will populate address + lat/lng)
+      // Block save if validation errors or required fields missing
+      if (emailError || phoneError) return;
+      if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
+        alert('Please fill all required fields');
+        return;
+      }
+      if (!isValidEmail(editData.email || '')) { setEmailError('Enter a valid email'); return; }
+      if (!isValidPhone(editData.phoneNumber || '')) { setPhoneError('Enter a valid 10-digit phone number'); return; }
       const payload: any = { ...(editData as any) };
       // Normalize latitude/longitude to numbers when present
       if (payload.latitude !== undefined && payload.latitude !== null && payload.latitude !== '') {
@@ -130,9 +124,12 @@ export const HospitalManagement: React.FC = () => {
       if (payload.longitude !== undefined && payload.longitude !== null && payload.longitude !== '') {
         payload.longitude = parseFloat(payload.longitude);
       }
+      // Normalize phone to +91 prefix
+      const { prefixed } = normalizePhone(payload.phoneNumber || '');
+      if (prefixed) payload.phoneNumber = prefixed;
       try {
-        const res: any = await createHospital(payload);
-        // use server returned hospital (with _id)
+        const res:any = await createHospital(payload);
+        // push the created hospital returned from server (with _id)
         setHospitals([...hospitals, res.data]);
       } catch (err) {
         // handle error (show toast, etc)
@@ -140,14 +137,18 @@ export const HospitalManagement: React.FC = () => {
       setIsAdding(false);
     } else if (isEditing) {
       try {
+        // Validation for edit
+        if (emailError || phoneError) return;
+        if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
+          alert('Please fill all required fields');
+          return;
+        }
+        if (!isValidEmail(editData.email || '')) { setEmailError('Enter a valid email'); return; }
+        if (!isValidPhone(editData.phoneNumber || '')) { setPhoneError('Enter a valid 10-digit phone number'); return; }
         const payload: any = { ...(editData as any) };
-        if (payload.latitude !== undefined && payload.latitude !== null && payload.latitude !== '') {
-          payload.latitude = parseFloat(payload.latitude);
-        }
-        if (payload.longitude !== undefined && payload.longitude !== null && payload.longitude !== '') {
-          payload.longitude = parseFloat(payload.longitude);
-        }
-        const res: any = await updateHospital(isEditing, payload);
+        const { prefixed } = normalizePhone(payload.phoneNumber || '');
+        if (prefixed) payload.phoneNumber = prefixed;
+        const res:any = await updateHospital(isEditing, payload as Hospital);
         setHospitals(hospitals.map(h => h._id === isEditing ? res.data : h));
       } catch (err) {
         // handle error (show toast, etc)
@@ -155,6 +156,8 @@ export const HospitalManagement: React.FC = () => {
       setIsEditing(null);
     }
     setEditData({});
+    setEmailError('');
+    setPhoneError('');
   };
 
   const handleCancel = () => {
@@ -236,36 +239,46 @@ export const HospitalManagement: React.FC = () => {
               onChange={(e) => setEditData({...editData, hospitalName: e.target.value})}
               className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
-            {/* Google Places search box (primary location input) */}
-            <input
-              ref={addPlaceRef}
-              type="search"
-              placeholder="Search address (Google Places)"
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 w-full"
-            />
-            <input
-              type="tel"
-              placeholder="Phone Number"
-              value={editData.phoneNumber || ''}
-              onChange={(e) => setEditData({...editData, phoneNumber: e.target.value})}
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              type="email"
-              placeholder="Email"
-              value={editData.email || ''}
-              onChange={(e) => setEditData({...editData, email: e.target.value})}
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <div className="flex items-center gap-2">
-              <input type="text" placeholder="Latitude" value={(editData as any).latitude || ''} onChange={e => setEditData({...(editData as any), latitude: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-              <input type="text" placeholder="Longitude" value={(editData as any).longitude || ''} onChange={e => setEditData({...(editData as any), longitude: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <PlacesAutocomplete
+                  value={editData.address as string}
+                  placeholder="Address"
+                  onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })}
+                />
+            <div>
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                value={editData.phoneNumber || ''}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0,10);
+                  setEditData({...editData, phoneNumber: digits});
+                  if (!digits) { setPhoneError(''); return; }
+                  setPhoneError(isValidPhone(digits) ? '' : 'Enter a valid 10-digit phone number');
+                }}
+                className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${phoneError ? 'border-red-500' : ''}`}
+              />
+              {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}
+            </div>
+            <div>
+              <input
+                type="email"
+                placeholder="Email"
+                value={editData.email || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditData({...editData, email: val});
+                  if (!val) { setEmailError(''); return; }
+                  setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
+                }}
+                className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
+              />
+              {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
             </div>
             <input
-              type="number"
+              type="text"
               placeholder="Reg No"
               value={editData.regNo || ''}
-              onChange={(e) => setEditData({...editData, regNo: parseInt(e.target.value)})}
+              onChange={(e) => setEditData({...editData, regNo: e.target.value})}
               className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
             <input
@@ -275,21 +288,7 @@ export const HospitalManagement: React.FC = () => {
               onChange={(e) => setEditData({...editData, contactName: e.target.value})}
               className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
-            <input
-              type="text"
-              placeholder="City"
-              value={editData.city || ''}
-              onChange={(e) => setEditData({...editData, city: e.target.value})}
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
             {/* Location will be selected via Google Places above */}
-            <input
-              type="text"
-              placeholder="State"
-              value={editData.state || ''}
-              onChange={(e) => setEditData({...editData, state: e.target.value})}
-              className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
             <input
               type="text"
               placeholder="Pincode"
@@ -340,18 +339,28 @@ export const HospitalManagement: React.FC = () => {
                   <h2 className="text-lg font-semibold mb-4">Edit Hospital</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <input type="text" placeholder="Hospital Name" value={editData.hospitalName || ''} onChange={e => setEditData({...editData, hospitalName: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <input type="text" placeholder="Address" value={editData.address || ''} onChange={e => setEditData({...editData, address: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <input ref={editPlaceRef} type="search" placeholder="Search address (Google Places)" className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 w-full" />
-                    <input type="tel" placeholder="Phone Number" value={editData.phoneNumber || ''} onChange={e => setEditData({...editData, phoneNumber: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <input type="email" placeholder="Email" value={editData.email || ''} onChange={e => setEditData({...editData, email: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <input type="number" placeholder="Reg No" value={editData.regNo || ''} onChange={e => setEditData({...editData, regNo: parseInt(e.target.value)})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                    {/* <input type="text" placeholder="Address" value={editData.address || ''} onChange={e => setEditData({...editData, address: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" /> */}
+                      <PlacesAutocomplete value={editData.address as string} placeholder="Address" onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })} />
+                    <div>
+                      <input type="tel" placeholder="Phone Number" value={editData.phoneNumber || ''} onChange={e => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0,10);
+                        setEditData({...editData, phoneNumber: digits});
+                        if (!digits) { setPhoneError(''); return; }
+                        setPhoneError(isValidPhone(digits) ? '' : 'Enter a valid 10-digit phone number');
+                      }} className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${phoneError ? 'border-red-500' : ''}`} />
+                      {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}
+                    </div>
+                    <div>
+                      <input type="email" placeholder="Email" value={editData.email || ''} onChange={e => {
+                        const val = e.target.value;
+                        setEditData({...editData, email: val});
+                        if (!val) { setEmailError(''); return; }
+                        setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
+                      }} className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`} />
+                      {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
+                    </div>
+                    <input type="text" placeholder="Reg No" value={editData.regNo || ''} onChange={e => setEditData({...editData, regNo: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                     <input type="text" placeholder="Contact Name" value={editData.contactName || ''} onChange={e => setEditData({...editData, contactName: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                    <input type="text" placeholder="City" value={editData.city || ''} onChange={e => setEditData({...editData, city: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                        <input type="text" placeholder="State" value={editData.state || ''} onChange={e => setEditData({...editData, state: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                        <div className="flex items-center gap-2">
-                          <input type="text" placeholder="Latitude" value={(editData as any).latitude || ''} onChange={e => setEditData({...(editData as any), latitude: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                          <input type="text" placeholder="Longitude" value={(editData as any).longitude || ''} onChange={e => setEditData({...(editData as any), longitude: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
-                        </div>
                     <input type="text" placeholder="Pincode" value={editData.pincode || ''} onChange={e => setEditData({...editData, pincode: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                       <div>
                         {/* Location selected via Google Places search above */}
@@ -377,8 +386,6 @@ export const HospitalManagement: React.FC = () => {
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1 text-sm text-gray-500 mb-2">
                       <div>Reg No: <span className="font-semibold">{hospital.regNo}</span></div>
                       <div>Contact: <span className="font-semibold">{hospital.contactName}</span></div>
-                      <div>City: <span className="font-semibold">{hospital.city}</span></div>
-                      <div>State: <span className="font-semibold">{hospital.state}</span></div>
                       <div>Pincode: <span className="font-semibold">{hospital.pincode}</span></div>
                     </div>
                     <div className="flex flex-wrap gap-6 items-center mt-2">

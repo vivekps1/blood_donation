@@ -82,7 +82,7 @@ function App() {
       case 'requests':
         return <DonationRequests currentUser={currentUser} userRole={currentUser.userRole} />;
       case 'notifications':
-        return <NotificationCenter userRole={currentUser.userRole} />;
+        return <NotificationCenter currentUser={currentUser} />;
       case 'reports':
         return <Reports userRole={currentUser.userRole} />;
       case 'donationhistory':

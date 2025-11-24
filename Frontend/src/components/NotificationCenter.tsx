@@ -113,6 +113,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
       setError(err?.response?.data?.error || err.message || 'Failed to mark all as read');
     }
   };
+  console.log(currentUser.userRole)
 
   return (
     <div className="space-y-6">

@@ -3,6 +3,7 @@ const Hospital = require("../models/Hospital");
 const DonationHistory = require("../models/DonationHistory");
 const MedicalReport = require("../models/MedicalReport");
 
+
 // Get all donation requests
 exports.getAllDonationRequests = async (req, res) => {
     try {
@@ -11,6 +12,25 @@ exports.getAllDonationRequests = async (req, res) => {
         if (status) {
             match.status = typeof status === 'string' ? status.toUpperCase() : status;
         }
+
+        // If request made by a non-admin user, restrict to donation requests
+        // where the user is listed as a volunteer (volunteers.donorId)
+        const user = req.user || {};
+        let query;
+        const isAdmin = typeof user.roleId !== 'undefined' && String(user.roleId) === '0';
+        if (!isAdmin && query.status === 'COMPLETED') {
+           
+            // support tokens that include either `userIds` (array) or `userId` (single)
+            if (Array.isArray(user.userIds) && user.userIds.length > 0) {
+                query['volunteers.donorId'] = { $in: user.userIds.map(id => String(id)) };
+            } else if (user.userId) {
+                query['volunteers.donorId'] = String(user.userId);
+            } else {
+                return res.status(403).json({ message: 'User context missing or insufficient privileges' });
+            }
+        }
+        console.log(query,"======");
+        var donationRequests = await DonationRequest.find(query);
 
         // If latitude/longitude provided, find nearby hospitals first and prioritize requests from them
         if (lat && lng) {
@@ -85,7 +105,7 @@ exports.getAllDonationRequests = async (req, res) => {
         });
         agg.push({ $unwind: { path: '$hospitalDetails', preserveNullAndEmptyArrays: true } });
 
-        const donationRequests = await DonationRequest.aggregate(agg);
+         donationRequests = await DonationRequest.aggregate(agg);
         
         // If requesting completed summary, compute summary
         if (match.status === 'COMPLETED') {
@@ -147,7 +167,7 @@ exports.createDonationRequest = async (req, res) => {
                 }
             }
 
-            const donationRequest = new DonationRequest({
+            var donationRequest = new DonationRequest({
                 ...payload,
                 requestDate: new Date(),
                 status: initialStatus,
@@ -155,8 +175,49 @@ exports.createDonationRequest = async (req, res) => {
                 availableDonors: 0 // Initialize with 0 available donors
             });
 
-        const newDonationRequest = await donationRequest.save();
-        res.status(201).json(newDonationRequest);
+        // Prepare body and, if hospitalId provided, snapshot hospital details
+        const body = { ...req.body };
+        if (body.hospitalId) {
+            let hospital = null;
+            try {
+                hospital = await Hospital.findById(body.hospitalId);
+            } catch (e) {
+                hospital = null;
+            }
+            if (!hospital) {
+                hospital = await Hospital.findOne({ hospitalId: String(body.hospitalId) });
+            }
+            if (hospital) {
+                body.hospitalId = hospital._id ? String(hospital._id) : body.hospitalId;
+                body.hospitalName = hospital.hospitalName || body.hospitalName;
+                body.hospitalAddress = hospital.address || body.hospitalAddress;
+                body.hospitalPhone = hospital.phoneNumber || body.hospitalPhone;
+                if (hospital.hospitalLocationGeo && hospital.hospitalLocationGeo.type === 'Point' && Array.isArray(hospital.hospitalLocationGeo.coordinates) && hospital.hospitalLocationGeo.coordinates.length === 2) {
+                    body.hospitalLocationGeo = hospital.hospitalLocationGeo;
+                } else {
+                    delete body.hospitalLocationGeo;
+                }
+            }
+        } else {
+            // sanitize hospitalLocationGeo if provided to avoid invalid GeoJSON
+            if (body.hospitalLocationGeo && body.hospitalLocationGeo.type === 'Point') {
+                if (!Array.isArray(body.hospitalLocationGeo.coordinates) || body.hospitalLocationGeo.coordinates.length !== 2) {
+                    // remove invalid geo to prevent MongoDB errors
+                    delete body.hospitalLocationGeo;
+                }
+            }
+        }
+
+         donationRequest = new DonationRequest({
+            ...body,
+            requestDate: new Date(),
+            status: initialStatus,
+            approved: initialStatus === 'APPROVED',
+        });
+
+        await donationRequest.save();
+
+        res.status(201).json(donationRequest);
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
@@ -173,6 +234,14 @@ exports.updateDonationRequest = async (req, res) => {
 
         // Prepare updates from body but normalize status and avoid unintentionally flipping `approved`
         const updates = { ...req.body };
+
+        // sanitize hospitalLocationGeo if present to avoid invalid GeoJSON
+        if (updates.hospitalLocationGeo && updates.hospitalLocationGeo.type === 'Point') {
+            if (!Array.isArray(updates.hospitalLocationGeo.coordinates) || updates.hospitalLocationGeo.coordinates.length !== 2) {
+                delete updates.hospitalLocationGeo;
+            }
+        }
+
         if (updates.status) {
             updates.status = String(updates.status).toUpperCase();
             // Only set approved when explicitly approving
@@ -198,7 +267,16 @@ exports.updateDonationRequest = async (req, res) => {
 
         // If being marked as completed/closed, set timestamps if not provided
         if (updates.status === 'COMPLETED') {
-            if (updates.fulfilledBy && !updates.fulfilledAt) {
+            // If frontend provided an array of fulfillers, persist them and set fallback single fields
+            if (Array.isArray(updates.fulfilledByList) && updates.fulfilledByList.length > 0) {
+                // ensure string fallbacks for existing code paths
+                updates.fulfilledBy = updates.fulfilledBy || String(updates.fulfilledByList[0]);
+                if (Array.isArray(updates.fulfilledByNames) && updates.fulfilledByNames.length > 0) {
+                    updates.fulfilledByName = updates.fulfilledByName || String(updates.fulfilledByNames[0]);
+                }
+                // set fulfilledAt if not present
+                if (!updates.fulfilledAt) updates.fulfilledAt = new Date();
+            } else if (updates.fulfilledBy && !updates.fulfilledAt) {
                 updates.fulfilledAt = new Date();
             }
         }
@@ -268,6 +346,15 @@ exports.volunteerForDonation = async (req, res) => {
         // Admin must explicitly close/complete the request.
         donationRequest.availableDonors = (donationRequest.availableDonors || 0) + 1;
         donationRequest.status = 'IN_PROGRESS';
+
+        // sanitize stored geo field if invalid (some older documents may contain only { type: 'Point' })
+        if (donationRequest.hospitalLocationGeo && donationRequest.hospitalLocationGeo.type === 'Point') {
+            if (!Array.isArray(donationRequest.hospitalLocationGeo.coordinates) || donationRequest.hospitalLocationGeo.coordinates.length !== 2) {
+                // remove invalid geo field to avoid MongoDB GeoJSON errors on save
+                donationRequest.hospitalLocationGeo = undefined;
+                delete donationRequest.hospitalLocationGeo;
+            }
+        }
 
         await donationRequest.save();
 

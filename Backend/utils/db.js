@@ -7,16 +7,20 @@ dotenv.config() ;
 const DB = process.env.DB ;
 
 
-const dbConnection = async() =>{
-    try{
+const dbConnection = async () => {
+    try {
+        if (!DB) {
+            throw new Error('Missing DB connection string in environment variable DB');
+        }
 
-        await mongoose.connect(DB).then(() =>{
-            console.log("Database Connected Successfully") ;
-        }) ;   
-    }catch (err){
-        console.log(error) ; 
-        setTimeout(dbConnection, 5000) ;
+        // connect and wait for completion; modern mongoose uses sensible defaults
+        await mongoose.connect(DB);
+        console.log('Database Connected Successfully');
+    } catch (err) {
+        // log the actual error and retry connection after a short delay
+        console.error('Database connection error:', err.message || err);
+        setTimeout(dbConnection, 5000);
     }
-}
+};
 
 module.exports=dbConnection ;

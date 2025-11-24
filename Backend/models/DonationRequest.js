@@ -40,6 +40,8 @@ const DonationRequestSchema = mongoose.Schema({
     // Fields to track fulfillment/closure
     fulfilledBy: { type: String },
     fulfilledByName: { type: String },
+    fulfilledByList: { type: [String], default: undefined },
+    fulfilledByNames: { type: [String], default: undefined },
     fulfilledAt: { type: Date },
     closedAt: { type: Date },
     closedReason: { type: String }

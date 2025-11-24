@@ -13,9 +13,13 @@ dotenv.config();
 const registerUser = async (req, res) => {
 
     // Determine role for new user. If not provided, default to 'donor'.
-    const roleToUse = req.body.role || 'donor';
+    const roleToUse = req.body.roleId !== undefined ? req.body.roleId : 1; // default to donor roleId = 1
+
+    console.log("Registering user with roleId:", roleToUse);
+    console.log("Request body:", req.body.roleId );
+
     // Fetch roleId for the payload role (ensure roleId exists)
-    const payloadRoleDoc = await Roles.findOne({ userRole: roleToUse, roleId: { $ne: null } });
+    const payloadRoleDoc = await Roles.findOne({ roleId: roleToUse });
     if (!payloadRoleDoc || typeof payloadRoleDoc.roleId === 'undefined') {
         return res.status(401).json({ msg: "Invalid role specified" });
     }
@@ -41,7 +45,7 @@ const registerUser = async (req, res) => {
         const user = await newUser.save();
         
         // If the user's role is 'donor', also create a donor record
-        if (roleToUse === 'donor') {
+        if (roleToUse !== 0) {
             const donorData = {
                 name: `${req.body.firstName} ${req.body.lastName}`,
                 email: req.body.email,

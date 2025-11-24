@@ -26,6 +26,23 @@ try{
     if (typeof payload.isVerified === 'string') {
         payload.isVerified = payload.isVerified === 'true';
     }
+    // Normalize incoming lat/lng or hospitalLocationGeo into GeoJSON Point
+    if (typeof payload.lat !== 'undefined' && typeof payload.lng !== 'undefined') {
+        const lat = Number(payload.lat);
+        const lng = Number(payload.lng);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+            payload.hospitalLocationGeo = { type: 'Point', coordinates: [lng, lat] };
+        }
+        delete payload.lat;
+        delete payload.lng;
+    } else if (payload.hospitalLocationGeo && payload.hospitalLocationGeo.type === 'Point') {
+        const coords = payload.hospitalLocationGeo.coordinates;
+        if (!Array.isArray(coords) || coords.length !== 2) {
+            delete payload.hospitalLocationGeo;
+        } else {
+            payload.hospitalLocationGeo.coordinates = [Number(coords[0]), Number(coords[1])];
+        }
+    }
     const newHospital = Hospital(payload) ; 
     const hospital = await newHospital.save() ; 
     res.status(201).json(hospital)
@@ -69,6 +86,23 @@ const updateHospital = async (req, res) => {
     }
     if (typeof updatePayload.isVerified === 'string') {
         updatePayload.isVerified = updatePayload.isVerified === 'true';
+    }
+    // Normalize incoming lat/lng or hospitalLocationGeo into GeoJSON Point
+    if (typeof updatePayload.lat !== 'undefined' && typeof updatePayload.lng !== 'undefined') {
+        const lat = Number(updatePayload.lat);
+        const lng = Number(updatePayload.lng);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+            updatePayload.hospitalLocationGeo = { type: 'Point', coordinates: [lng, lat] };
+        }
+        delete updatePayload.lat;
+        delete updatePayload.lng;
+    } else if (updatePayload.hospitalLocationGeo && updatePayload.hospitalLocationGeo.type === 'Point') {
+        const coords = updatePayload.hospitalLocationGeo.coordinates;
+        if (!Array.isArray(coords) || coords.length !== 2) {
+            delete updatePayload.hospitalLocationGeo;
+        } else {
+            updatePayload.hospitalLocationGeo.coordinates = [Number(coords[0]), Number(coords[1])];
+        }
     }
     const updateHospital = await Hospital.findByIdAndUpdate(
         req.params.id , 

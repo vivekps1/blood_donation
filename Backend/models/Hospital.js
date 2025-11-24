@@ -8,12 +8,13 @@ const mongoose = require("mongoose");
 const HospitalSchema = new mongoose.Schema({
   hospitalId: { type: String, required: false, index: true },
   hospitalName: { type: String, required: true },
-  regNo: { type: Number, required: true },
+  // Changed regNo from Number to String. If existing documents have numeric regNo,
+  // run a migration: db.hospitals.find({ regNo: { $type: 'int' } }).forEach(d => db.hospitals.updateOne({ _id: d._id }, { $set: { regNo: d.regNo.toString() } }));
+  regNo: { type: String, required: true },
   contactName: { type: String, required: true },
   email: { type: String, required: true },
   phoneNumber: { type: String, required: true },
   address: { type: String, required: true },
-  city: { type: String, required: true },
   // Optional human-friendly location tag (e.g. campus, zone, branch name)
   location: { type: String, required: false },
   // GeoJSON point for precise location (stored as [lng, lat])
@@ -28,9 +29,16 @@ const HospitalSchema = new mongoose.Schema({
       default: [0, 0]
     }
   },
-  state: { type: String, required: true },
   pincode: { type: String, required: true },
-  isVerified: { type: Boolean, default: false }
+  isVerified: { type: Boolean, default: false },
+  hospitalLocationGeo: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: { type: [Number], default: void 0 }
+  }
 }, { timestamps: true });
 
 // Safeguard: ensure hospitalId stored as string if provided numerically.
@@ -41,7 +49,7 @@ HospitalSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model("Hospital", HospitalSchema);
+// 2dsphere index for geospatial queries on hospital locations
+HospitalSchema.index({ hospitalLocationGeo: '2dsphere' });
 
-// Create 2dsphere index for geospatial queries
-HospitalSchema.index({ locationGeo: '2dsphere' });
+module.exports = mongoose.model("Hospital", HospitalSchema);

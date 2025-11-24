@@ -77,20 +77,13 @@ export const getAllDonationRequests = (filters?: { status?: string; lat?: number
   }
   if (filters?.radius) params.append('radius', String(filters.radius));
   const qs = params.toString();
+  console.log('Fetching donation requests with query string:', qs);
   return api.get(`/donation-requests${qs ? `?${qs}` : ''}`);
 };
 
 export const getDonationRequestById = (id: string) => api.get(`/donation-requests/${id}`);
 
-export const createDonationRequest = (requestData: {
-  patientName: string;
-  bloodGroup: string;
-  bloodUnitsCount: number;
-  medicalCondition: string;
-  priority: string;
-  requiredDate: Date;
-  location: string;
-}) => api.post('/donation-requests', requestData);
+export const createDonationRequest = (requestData: any) => api.post('/donation-requests', requestData);
 
 export const updateDonationRequest = (id: string, requestData: {
   status?: string;
