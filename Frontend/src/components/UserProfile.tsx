@@ -11,6 +11,9 @@ interface UserData {
   bloodGroup?: string;
   address?: string;
   adminEmail?: string;
+  height?: number | string;
+  weight?: number | string;
+  dateofBirth?: string;
   photo?: string;
   role: 'donor' | 'admin' | 'user';
   healthReport?: {
@@ -38,6 +41,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
     phone: user.phone,
     email: user.email,
     address: (user as any).address || '',
+    height: (user as any).height || '',
+    weight: (user as any).weight || '',
+    dateofBirth: (user as any).dateofBirth ? new Date((user as any).dateofBirth).toISOString().slice(0,10) : '',
   });
   const [showHealthHistory, setShowHealthHistory] = useState(false);
 
@@ -53,6 +59,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       lastName: editData.lastName,
       // Only allow updating first/last name and address via this UI
       address: editData.address,
+      height: editData.height,
+      weight: editData.weight,
+      dateofBirth: editData.dateofBirth,
     };
     updateUserProfile(user.id, payload)
       .then(() => {
@@ -60,6 +69,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           firstName: editData.firstName,
           lastName: editData.lastName,
           address: editData.address,
+          height: editData.height,
+          weight: editData.weight,
+          dateofBirth: editData.dateofBirth,
         });
         setIsEditing(false);
       })
@@ -74,6 +86,22 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       const url = URL.createObjectURL(file);
       onUpdate?.({ photo: url });
     }
+  };
+
+  // Parse phone into country code and local number for display
+  const parsePhone = (phone?: string) => {
+    if (!phone) return { country: '+91', number: '' };
+    const p = phone.replace(/\s+/g, '');
+    if (p.startsWith('+')) {
+      if (p.startsWith('+91')) return { country: '+91', number: p.slice(3) };
+      // fallback: take first 3 chars as country
+      return { country: p.slice(0, 3), number: p.slice(3) };
+    }
+    if (p.startsWith('91') && p.length > 10) {
+      return { country: '+91', number: p.slice(2) };
+    }
+    // default to +91 and full number
+    return { country: '+91', number: p };
   };
 
   return (
@@ -164,7 +192,15 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
               <Phone className="w-4 h-4 text-gray-400" />
-              <span>{user.phone}</span>
+              {(() => {
+                const { country, number } = parsePhone(user.phone);
+                return (
+                  <div className="flex items-center">
+                    <div className="px-2 py-1 bg-gray-100 text-sm text-gray-700 rounded-l border">{country}</div>
+                    <div className="px-3 py-1 bg-gray-50 text-sm text-gray-900 border-l">{number || '-'}</div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -195,6 +231,60 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                 <span>{user.address || '-'}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+            {isEditing ? (
+              <input
+                type="date"
+                value={(editData as any).dateofBirth}
+                onChange={(e) => setEditData({...editData, dateofBirth: e.target.value})}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <span>{user.dateofBirth ? new Date(user.dateofBirth).toLocaleDateString() : '-'}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Height</label>
+            {isEditing ? (
+              <div className="flex items-center w-full">
+                <input
+                  type="number"
+                  value={(editData as any).height}
+                  onChange={(e) => setEditData({...editData, height: e.target.value})}
+                  className="flex-1 min-w-0 p-3 border rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <span className="px-3 py-3 border border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">cm</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <span>{user.height !== undefined && user.height !== null ? `${user.height} cm` : '-'}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+            {isEditing ? (
+              <div className="flex items-center w-full">
+                <input
+                  type="number"
+                  value={(editData as any).weight}
+                  onChange={(e) => setEditData({...editData, weight: e.target.value})}
+                  className="flex-1 min-w-0 p-3 border rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <span className="px-3 py-3 border border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">kg</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <span>{user.weight !== undefined && user.weight !== null ? `${user.weight} kg` : '-'}</span>
               </div>
             )}
           </div>
