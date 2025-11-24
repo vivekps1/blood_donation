@@ -45,8 +45,33 @@ export const HospitalManagement: React.FC = () => {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editData, setEditData] = useState<Partial<Hospital>>({});
+
+  const isHospitalFormValid = (data: Partial<Hospital>) => {
+    if (!data) return false;
+    const required = [
+      'hospitalName',
+      'regNo',
+      'contactName',
+      'email',
+      'phoneNumber',
+      'address',
+      'pincode',
+    ];
+    for (const key of required) {
+      const val = (data as any)[key];
+      if (val === undefined || val === null) return false;
+      if (typeof val === 'string' && val.trim() === '') return false;
+      if (key === 'regNo' && Number.isNaN(Number(val))) return false;
+    }
+    // basic email check
+    const email = (data as any).email || '';
+    const emailOk = /\S+@\S+\.\S+/.test(String(email));
+    if (!emailOk) return false;
+    return true;
+  };
   const [emailError, setEmailError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
+  const saveDisabled = !isHospitalFormValid(editData);
   const addPlaceRef = useRef<HTMLInputElement | null>(null);
   const editPlaceRef = useRef<HTMLInputElement | null>(null);
 
@@ -311,7 +336,8 @@ export const HospitalManagement: React.FC = () => {
           <div className="flex gap-2 mt-4">
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              disabled={saveDisabled}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${saveDisabled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
             >
               <Save className="w-4 h-4" />
               Save
@@ -371,7 +397,7 @@ export const HospitalManagement: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex gap-2 mt-4">
-                    <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Save className="w-4 h-4" /> Save</button>
+                    <button onClick={handleSave} disabled={saveDisabled} className={`flex items-center gap-2 px-4 py-2 rounded-lg ${saveDisabled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}><Save className="w-4 h-4" /> Save</button>
                     <button onClick={handleCancel} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"><X className="w-4 h-4" /> Cancel</button>
                   </div>
                 </div>

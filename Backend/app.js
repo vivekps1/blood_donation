@@ -10,6 +10,7 @@ const donationHistoryRoute = require("./routes/donationHistory") ;
 const notificationRoute = require("./routes/notification") ;
 const donationHistoryAggregateRoute = require("./routes/donationHistoryAggregate") ;
 const donationRequestRoute = require("./routes/donationRequest") ;
+const statsRoute = require("./routes/stats");
 //CORS 
 app.use(cors()); 
 
@@ -26,6 +27,7 @@ app.use("/api/v1/roles", roleRoute)
 // /aggregate isn't intercepted by the "/:id" route inside donationHistoryRoute.
 app.use('/api/v1/donation/history', donationHistoryAggregateRoute);
 app.use('/api/v1/donation-requests', donationRequestRoute);
+app.use('/api/v1/stats', statsRoute);
 
 const userProfileRoute = require("./routes/userProfile");
 app.use('/api/v1/user-profile', userProfileRoute);

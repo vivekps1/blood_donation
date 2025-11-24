@@ -17,6 +17,8 @@ const DonationRequestSchema = mongoose.Schema({
         },
         coordinates: { type: [Number], default: void 0 }
     },
+    // ID of the user who created/requested this donation request
+    requestedBy: { type: String },
     patientName: {type:String}, 
     bloodGroup: {type:String, require:true}, 
     bloodUnitsCount: {type:Number, require:true}, 

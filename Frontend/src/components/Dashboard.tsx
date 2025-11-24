@@ -1,17 +1,46 @@
-import  React from 'react';
-import { Users, Activity, Database, Clock, AlertCircle, Calendar } from 'lucide-react';
+import  React, { useEffect, useState } from 'react';
+import { Users, Activity, Database, Clock, AlertCircle } from 'lucide-react';
+import { getSystemStats } from '../utils/axios';
 
 interface DashboardProps {
   userRole: string;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
-  const stats = [
-    { title: 'Total Donors', value: '1,247', change: '+12%', icon: Users, color: 'blue' },
-    { title: 'Active Hospitals', value: '24', change: '+3%', icon: Activity, color: 'green' },
-    { title: 'Blood Units', value: '3,456', change: '+8%', icon: Database, color: 'red' },
-    { title: 'This Month', value: '156', change: '+18%', icon: Clock, color: 'purple' },
-  ];
+  const [stats, setStats] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const formatNumber = (n: number) => {
+    return n?.toLocaleString?.() || String(n || 0);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        setLoading(true);
+        const res: any = await getSystemStats();
+        const data = res.data || {};
+        if (!mounted) return;
+        setStats([
+          { title: 'Total Donors', value: formatNumber(data.totalDonors || 0), icon: Users, color: 'blue' },
+          { title: 'Active Hospitals', value: formatNumber(data.totalHospitals || 0), icon: Activity, color: 'green' },
+          { title: 'Blood Units Requested', value: formatNumber(data.totalUnitsRequested || 0), icon: Database, color: 'red' },
+          { title: 'Successful Donations', value: formatNumber(data.totalSuccessfulDonations || 0), icon: Clock, color: 'purple' },
+        ]);
+        setError(null);
+      } catch (err: any) {
+        console.error('Failed to load system stats', err);
+        if (!mounted) return;
+        setError('Failed to load stats');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
 
   const recentRequests = [
     { id: 1, hospital: 'City General Hospital', bloodType: 'O+', units: 5, status: 'urgent', time: '2 hours ago' },
@@ -45,24 +74,25 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                <p className={`text-sm mt-1 ${
-                  stat.change.startsWith('+') ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {stat.change} from last month
-                </p>
-              </div>
-              <div className={`w-12 h-12 rounded-lg flex items-center justify-center bg-${stat.color}-100`}>
-                <stat.icon className={`w-6 h-6 text-${stat.color}-600`} />
+        {loading ? (
+          <div className="col-span-full text-center py-8">Loading stats...</div>
+        ) : error ? (
+          <div className="col-span-full text-center text-red-600">{error}</div>
+        ) : (
+          stats.map((stat, index) => (
+            <div key={index} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">{stat.title}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                </div>
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center bg-${stat.color}-100`}>
+                  <stat.icon className={`w-6 h-6 text-${stat.color}-600`} />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Recent Activity */}
@@ -94,32 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Calendar className="w-5 h-5 text-blue-500 mr-2" />
-            Upcoming Events
-          </h3>
-          <div className="space-y-4">
-            <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                <Calendar className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="font-medium text-gray-900">Blood Drive - City Mall</p>
-                <p className="text-sm text-gray-600">Tomorrow, 9:00 AM - 5:00 PM</p>
-              </div>
-            </div>
-            <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                <Users className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <p className="font-medium text-gray-900">Donor Appreciation Event</p>
-                <p className="text-sm text-gray-600">Friday, 6:00 PM - 9:00 PM</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Upcoming Events removed per request - keep placeholder for future use */}
       </div>
     </div>
   );

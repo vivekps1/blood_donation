@@ -72,24 +72,14 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const statusParam = statusFilter && statusFilter !== 'all' ? statusFilter.toUpperCase() : undefined;
   const filters: any = {};
   if (statusParam) filters.status = statusParam;
-  // include coordinates to let backend sort by proximity
-  // Priority: if user is a donor and browser geolocation is available, use browser coords.
-  // If browser geolocation is available use it (preferred). This will be set for donors
-  // but we send it whenever available so the backend can use it for proximity ordering.
-  if (browserLat != null && browserLng != null) {
+  // include coordinates to let backend sort by proximity ONLY when the
+  // current user is a donor and browser geolocation is available.
+  // Do NOT fall back to stored user coordinates here — we only send
+  // browser-provided coords as requested.
+  if (userRole === 'donor' && browserLat != null && browserLng != null) {
     filters.lat = browserLat;
     filters.lng = browserLng;
     if (browserAccuracy != null) filters.accuracy = browserAccuracy;
-  } else if (currentUser) {
-    // fall back to stored user coordinates
-    if (typeof currentUser.latitude === 'number' && typeof currentUser.longitude === 'number') {
-      filters.lat = currentUser.latitude;
-      filters.lng = currentUser.longitude;
-    } else if (currentUser.locationGeo && Array.isArray(currentUser.locationGeo.coordinates) && currentUser.locationGeo.coordinates.length >= 2) {
-      // locationGeo stored as [lng, lat]
-      filters.lat = currentUser.locationGeo.coordinates[1];
-      filters.lng = currentUser.locationGeo.coordinates[0];
-    }
   }
   const response = await getAllDonationRequests(filters as any);
       // assume response.data is an array of DonationRequest-like objects
@@ -107,19 +97,73 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   };
 
   useEffect(() => {
-    fetchDonationRequests();
-    // fetch hospitals for request creation
+    // Consolidated behavior: for donors, try to get browser geolocation on mount
+    // and only fetch donation requests after position is obtained (or when
+    // geolocation fails). For non-donors, fetch immediately.
+
     const fetchHospitals = async () => {
       try {
-        const res:any = await getAllHospitals();
+        const res: any = await getAllHospitals();
         setHospitals(res.data || []);
       } catch (err) {
         console.warn('Failed to load hospitals', err);
       }
     };
-    fetchHospitals();
+
+    // Helper to trigger fetch once (prevents multiple calls when position updates)
+    const triggerFetch = () => fetchDonationRequests();
+
+    if (userRole !== 'donor') {
+      triggerFetch();
+      fetchHospitals();
+      return; // non-donor behavior complete
+    }
+
+    // If donor and we already have coords, fetch immediately
+    if (browserLat != null && browserLng != null) {
+      triggerFetch();
+      fetchHospitals();
+      return;
+    }
+
+    // For donors without coords, attempt to obtain browser geolocation now
+    if (!navigator.geolocation) {
+      console.warn('Geolocation not supported by browser');
+      // fallback: fetch without coords
+      triggerFetch();
+      fetchHospitals();
+      return;
+    }
+
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (cancelled) return;
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null;
+        setBrowserLat(lat);
+        setBrowserLng(lng);
+        setBrowserAccuracy(acc);
+        // fetch requests with coords
+        triggerFetch();
+        fetchHospitals();
+      },
+      (err) => {
+        if (cancelled) return;
+        console.warn('Geolocation error', err.message);
+        // still fetch requests without coords
+        triggerFetch();
+        fetchHospitals();
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5000 }
+    );
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [statusFilter, userRole]);
 
   useEffect(() => {
     const fetchHospitals = async () => {
@@ -133,33 +177,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     fetchHospitals();
   }, []);
 
-  // If user is a donor, attempt to get browser geolocation and refresh requests using it
-  useEffect(() => {
-    if (userRole !== 'donor') return;
-    if (!navigator.geolocation) {
-      console.warn('Geolocation not supported by browser');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null;
-        setBrowserLat(lat);
-        setBrowserLng(lng);
-        setBrowserAccuracy(acc);
-        // re-fetch donation requests with browser coords
-        fetchDonationRequests();
-      },
-      (err) => {
-        console.warn('Geolocation error', err.message);
-        // still fetch requests without coords
-        fetchDonationRequests();
-      },
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5000 }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole]);
+  
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -168,11 +186,21 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const filteredAndSearchedRequests = requests.filter((request) => {
     const reqStatus = (request.status || '').toString().toLowerCase();
     const matchesStatus = statusFilter === 'all' || reqStatus === statusFilter;
-    // For donor users, only allow approved requests. Treat closed/completed as approved on the frontend
+    // For donor users, allow approved or closed requests. Also allow the
+    // requesting user to see their own pending requests (requestedBy === currentUser id).
     if (userRole === 'donor') {
       const isApprovedBackend = ('approved' in request) ? Boolean((request as any).approved) : reqStatus === 'approved';
-      const isApprovedEffective = isApprovedBackend || reqStatus === 'closed' || reqStatus === 'completed' || reqStatus === 'approved';
-      if (!isApprovedEffective) return false;
+      const isClosed = reqStatus === 'closed';
+      const isApprovedEffective = isApprovedBackend || isClosed || reqStatus === 'approved';
+
+      // If user is the one who created/requested this donation, allow them to see it even if pending
+      const currentUserId = currentUser ? (currentUser._id || currentUser.id || currentUser.userId) : null;
+      const isRequester = currentUserId && ((request as any).requestedBy && String((request as any).requestedBy) === String(currentUserId));
+
+      // Exclude completed requests for donors
+      if (reqStatus === 'completed') return false;
+
+      if (!isApprovedEffective && !isRequester) return false;
     }
     const lower = searchTerm.trim().toLowerCase();
     const matchesSearch =
@@ -390,8 +418,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         const fulfilledByNames = selectedFulfillVolunteers.map((s) => s.donorName || s.donorId || '');
         payload.fulfilledByList = fulfilledByList;
         payload.fulfilledByNames = fulfilledByNames;
-        payload.fulfilledBy = fulfilledByList[0] || '';
-        payload.fulfilledByName = fulfilledByNames[0] || '';
+        payload.fulfilledBy = fulfilledByNames.toString();
+        payload.fulfilledByName = fulfilledByNames.toString();
       }
       await updateDonationRequest(currentCloseRequestId, payload as any);
       setCloseModalOpen(false);
@@ -412,7 +440,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
           <Activity className="w-7 h-7 text-red-600 mr-3" />
           Donation Requests
         </h1>
-        {(userRole === 'hospital' || userRole === 'admin') && (
+        {(
           <>
             <button onClick={handleNewRequest} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center">
               <Plus className="w-4 h-4 mr-2" />
@@ -591,6 +619,18 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
             </div>
+            {/* Show small indicator when browser geolocation is used for donors */}
+            {userRole === 'donor' && browserLat != null && browserLng != null && (
+              <div className="mt-2 flex items-center space-x-2">
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Showing nearby requests</span>
+                <button
+                  onClick={() => fetchDonationRequests()}
+                  className="text-sm text-gray-600 underline hover:text-gray-800"
+                >
+                  Refresh
+                </button>
+              </div>
+            )}
           </div>
 
           {userRole !== 'donor' && (
@@ -658,6 +698,9 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
                   <div className="flex items-center space-x-6 text-sm text-gray-600">
                     <span>Location: {request.location}</span>
+                    {typeof (request as any).distanceMeters === 'number' && (
+                      <span>Distance: {(((request as any).distanceMeters || 0) / 1000).toFixed(1)} km</span>
+                    )}
                     {(
                       // show approved badge if backend says approved OR if request is closed/completed
                       (('approved' in request) && ((request as any).approved)) || (request.status || '').toLowerCase() === 'closed' || (request.status || '').toLowerCase() === 'completed' || (request.status || '').toLowerCase() === 'approved'
