@@ -1,5 +1,5 @@
 import  React, { useState, useEffect } from 'react';
-import { User, Mail, Lock, Phone, MapPin, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Lock, Phone, MapPin, Eye, EyeOff, Activity } from 'lucide-react';
 
 interface LoginData {
   email: string;
@@ -15,6 +15,9 @@ interface RegisterData {
   phone: string;
   address: string;
   bloodType: string;
+  height?: string;
+  weight?: string;
+  dateOfBirth?: string;
 }
 
 export default function RegisterUser({
@@ -28,6 +31,9 @@ export default function RegisterUser({
 }) {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const [loginData, setLoginData] = useState<LoginData>({ email: '', password: '' });
   const [registerData, setRegisterData] = useState<RegisterData>({
     firstName: '',
@@ -38,6 +44,7 @@ export default function RegisterUser({
     phone: '',
     address: '',
     bloodType: ''
+    ,height: '', weight: '', dateOfBirth: ''
   });
 
   const initialRegisterData: RegisterData = {
@@ -49,6 +56,7 @@ export default function RegisterUser({
     phone: '',
     address: '',
     bloodType: ''
+    ,height: '', weight: '', dateOfBirth: ''
   };
 
   // Clear/reset the register form whenever the Register view is shown
@@ -71,15 +79,51 @@ export default function RegisterUser({
       alert('Passwords do not match');
       return;
     }
+    // Email format validation (allowed domains: .co, .com, .in, .net)
+    const email = registerData.email || '';
+    const emailValid = /^[^\s@]+@[^\s@]+\.(?:co|com|in|net)$/i.test(email);
+    if (!emailValid) {
+      setEmailError('Enter a valid email');
+      return;
+    }
+
+    // Phone validation: require exactly 10 digits (local number)
+    const rawPhone = registerData.phone || '';
+    const cleanedPhone = rawPhone.replace(/\D/g, '');
+    const phoneValid = /^\d{10}$/.test(cleanedPhone);
+    if (!phoneValid) {
+      setPhoneError('Enter a valid 10-digit phone number');
+      return;
+    }
+    // Validate age >= 18
+    if (!registerData.dateOfBirth) {
+      alert('Please provide your date of birth');
+      return;
+    }
+    const dob = new Date(registerData.dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    if (age < 18) {
+      alert('You must be at least 18 years old to register');
+      return;
+    }
     // Map frontend fields to backend expected payload keys
+    // Ensure phone is saved with +91 prefix in the backend
     const payload: any = {
       firstName: registerData.firstName,
       lastName: registerData.lastName,
       email: registerData.email,
       password: registerData.password,
-      phoneNumber: registerData.phone,
+      phoneNumber: `+91${cleanedPhone}`,
       address: registerData.address,
       bloodGroup: registerData.bloodType,
+      height: registerData.height,
+      weight: registerData.weight,
+      dateofBirth: registerData.dateOfBirth,
       // create a simple username if backend expects one
       userName: `${registerData.firstName || ''}${registerData.lastName || ''}`.toLowerCase()
     };
@@ -87,12 +131,35 @@ export default function RegisterUser({
     onRegister && onRegister(payload);
   };
 
+  // Live validation when user types
+  const onEmailChange = (val: string) => {
+    setRegisterData({ ...registerData, email: val });
+    if (!val) {
+      setEmailError('');
+      return;
+    }
+    const ok = /^[^\s@]+@[^\s@]+\.(?:co|com|in|net)$/i.test(val);
+    setEmailError(ok ? '' : 'Enter a valid email');
+  };
+
+  const onPhoneChange = (val: string) => {
+    // allow only digits and limit to 10 digits for local number
+    const digits = val.replace(/\D/g, '').slice(0, 10);
+    setRegisterData({ ...registerData, phone: digits });
+    if (!digits) {
+      setPhoneError('');
+      return;
+    }
+    const ok = /^\d{10}$/.test(digits);
+    setPhoneError(ok ? '' : 'Enter a valid 10-digit phone number');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <div className="w-8 h-8 bg-white rounded-full"></div>
+            <Activity className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Blood Bank</h1>
           <p className="text-gray-600">Save lives, donate blood</p>
@@ -120,7 +187,7 @@ export default function RegisterUser({
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
                     type="text"
-                    placeholder="First Name"
+                    placeholder="First Name *"
                     value={registerData.firstName}
                     onChange={(e) => setRegisterData({...registerData, firstName: e.target.value})}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
@@ -139,39 +206,45 @@ export default function RegisterUser({
                     onChange={(e) => setRegisterData({...registerData, lastName: e.target.value})}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     autoComplete="family-name"
-                    required
+                    
                   />
                 </div>
               </div>
             </div>
 
             <div>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={registerData.email}
-                  onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  autoComplete="email"
-                  required
-                />
+              <div>
+                <div className="relative h-12">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="email"
+                    placeholder="Email *"
+                    value={registerData.email}
+                    onChange={(e) => onEmailChange(e.target.value)}
+                    className="w-full pl-10 pr-4 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+                {emailError && <div className="text-sm text-red-600 mt-2">{emailError}</div>}
               </div>
             </div>
 
             <div>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="tel"
-                  placeholder="Phone Number"
-                  value={registerData.phone}
-                  onChange={(e) => setRegisterData({...registerData, phone: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  autoComplete="tel"
-                  required
-                />
+              <div>
+                <div className="relative h-12">
+                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="tel"
+                    placeholder="Phone Number *"
+                    value={registerData.phone}
+                    onChange={(e) => onPhoneChange(e.target.value)}
+                    className="w-full pl-10 pr-4 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    autoComplete="tel"
+                    required
+                  />
+                </div>
+                {phoneError && <div className="text-sm text-red-600 mt-2">{phoneError}</div>}
               </div>
             </div>
 
@@ -185,24 +258,72 @@ export default function RegisterUser({
                   onChange={(e) => setRegisterData({...registerData, address: e.target.value})}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   autoComplete="street-address"
-                  required
                 />
               </div>
             </div>
 
-            <div>
-              <select
-                value={registerData.bloodType}
-                onChange={(e) => setRegisterData({...registerData, bloodType: e.target.value})}
-                className="w-full py-3 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                autoComplete="off"
-                required
-              >
-                  <option value="" disabled hidden>Blood Type</option>
-                {bloodTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+            {/* Single DOB + Blood Type row (duplicate removed) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center">
+                  <div className="w-full">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth <span className="text-red-600">*</span></label>
+                    <input
+                      type="date"
+                      placeholder="Date of Birth"
+                      value={registerData.dateOfBirth}
+                      onChange={(e) => setRegisterData({...registerData, dateOfBirth: e.target.value})}
+                      className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent appearance-none box-border leading-tight"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 opacity-0">Blood Type</label>
+                  <select
+                    value={registerData.bloodType}
+                    onChange={(e) => setRegisterData({...registerData, bloodType: e.target.value})}
+                    className="w-full h-12 pl-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white appearance-none box-border"
+                    autoComplete="off"
+                    required
+                  >
+                    <option value="" disabled hidden>Blood Type *</option>
+                    {bloodTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">▾</span>
+                </div>
+              </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="w-full">
+                <label className="sr-only">Height (cm)</label>
+                <div className="flex items-center w-full">
+                  <input
+                    type="number"
+                    placeholder="Height"
+                    value={registerData.height}
+                    onChange={(e) => setRegisterData({...registerData, height: e.target.value})}
+                    className="flex-1 min-w-0 py-3 px-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    min={0}
+                  />
+                  <span className="px-3 py-2 border border-gray-300 border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">cm</span>
+                </div>
+              </div>
+              <div className="w-full">
+                <label className="sr-only">Weight (kg)</label>
+                <div className="flex items-center w-full">
+                  <input
+                    type="number"
+                    placeholder="Weight"
+                    value={registerData.weight}
+                    onChange={(e) => setRegisterData({...registerData, weight: e.target.value})}
+                    className="flex-1 min-w-0 py-3 px-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    min={0}
+                  />
+                  <span className="px-3 py-2 border border-gray-300 border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">kg</span>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -210,7 +331,7 @@ export default function RegisterUser({
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Password"
+                  placeholder="Password *"
                   value={registerData.password}
                   onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
                   className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
@@ -231,24 +352,44 @@ export default function RegisterUser({
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
-                  type="password"
-                  placeholder="Confirm Password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Confirm Password *"
                   value={registerData.confirmPassword}
                   onChange={(e) => setRegisterData({...registerData, confirmPassword: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   autoComplete="new-password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
+              {registerData.confirmPassword && registerData.password !== registerData.confirmPassword && (
+                <div className="text-sm text-red-600 mt-2">Passwords do not match.</div>
+              )}
             </div>
 
-            <button
-              type="submit"
-              disabled={registerData.bloodType === ''}
-              className={`w-full rounded-lg font-medium transition-colors py-3 ${registerData.bloodType === '' ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
-            >
-              Register
-            </button>
+            {
+              (() => {
+                const requiredFilled = Boolean(registerData.firstName && registerData.phone && registerData.email && registerData.dateOfBirth && registerData.bloodType && registerData.password);
+                const passwordsMatch = registerData.password === registerData.confirmPassword;
+                const noFieldErrors = !emailError && !phoneError;
+                const isFormValid = requiredFilled && passwordsMatch && noFieldErrors;
+                return (
+                  <button
+                    type="submit"
+                    disabled={!isFormValid}
+                    className={`w-full rounded-lg font-medium transition-colors py-3 ${!isFormValid ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                  >
+                    Register
+                  </button>
+                );
+              })()
+            }
              <div className="text-center mt-4">
                 <button
                 className="text-red-600 underline"

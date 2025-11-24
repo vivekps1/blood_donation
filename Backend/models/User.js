@@ -9,10 +9,13 @@ const UserSchema = mongoose.Schema({
     password:{type:String, require:true}, 
     bloodGroup:{type:String, require:true}, 
     dateofBirth:{type:Date, require:true}, 
+    height: { type: Number },
+    weight: { type: Number },
     isActive:{type:Number, default:0}, 
     roleId:{type:Number, default:1}, 
-},{
-    timestamp:true
+},
+{
+    timestamps: true
 })
 
 module.exports = mongoose.model("User", UserSchema)
