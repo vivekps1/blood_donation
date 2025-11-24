@@ -416,19 +416,10 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                         <p className="text-gray-500">Weight</p>
                         <p className="font-medium">{donor.weight ? `${donor.weight} kg` : '-'}</p>
                       </div>
-                      <div>
-                        <p className="text-gray-500">Last Status</p>
-                        <p className="font-medium">{lastStatus}</p>
-                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  {eligibility.status === 'eligible' && (
-                    <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
-                      Notify for Donation
-                    </button>
-                  )}
                   {userRole === 'admin' && (
                     <button
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"

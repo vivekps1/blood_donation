@@ -7,7 +7,7 @@ const MedicalReport = require("../models/MedicalReport");
 // Get all donation requests
 exports.getAllDonationRequests = async (req, res) => {
     try {
-        const { status, lat, lng, radius } = req.query;
+        const { status, lat, lng, radius, accuracy } = req.query;
         let match = {};
         if (status) {
             match.status = typeof status === 'string' ? status.toUpperCase() : status;
@@ -16,27 +16,29 @@ exports.getAllDonationRequests = async (req, res) => {
         // If request made by a non-admin user, restrict to donation requests
         // where the user is listed as a volunteer (volunteers.donorId)
         const user = req.user || {};
-        let query;
         const isAdmin = typeof user.roleId !== 'undefined' && String(user.roleId) === '0';
-        if (!isAdmin && query.status === 'COMPLETED') {
+        if (!isAdmin && match.status === 'COMPLETED') {
            
             // support tokens that include either `userIds` (array) or `userId` (single)
             if (Array.isArray(user.userIds) && user.userIds.length > 0) {
-                query['volunteers.donorId'] = { $in: user.userIds.map(id => String(id)) };
+                match['volunteers.donorId'] = { $in: user.userIds.map(id => String(id)) };
             } else if (user.userId) {
-                query['volunteers.donorId'] = String(user.userId);
+                match['volunteers.donorId'] = String(user.userId);
             } else {
                 return res.status(403).json({ message: 'User context missing or insufficient privileges' });
             }
         }
-        console.log(query,"======");
-        var donationRequests = await DonationRequest.find(query);
+        console.log(match,"======");
+        var donationRequests = await DonationRequest.find(match);
 
         // If latitude/longitude provided, find nearby hospitals first and prioritize requests from them
         if (lat && lng) {
             const latitude = parseFloat(lat);
             const longitude = parseFloat(lng);
-            const maxDistance = radius ? parseInt(radius) : 5000; // meters
+            // Use explicit `radius` when provided. If not provided, fall back to
+            // the browser `accuracy` value (in meters) when available. Otherwise
+            // default to 5000 meters.
+            const maxDistance = radius ? parseInt(radius) : (accuracy ? parseFloat(accuracy) : 5000); // meters
 
             // Find nearby hospitals (live data) ordered by proximity
             const nearbyHospitals = await Hospital.aggregate([
@@ -44,7 +46,7 @@ exports.getAllDonationRequests = async (req, res) => {
                     $geoNear: {
                         near: { type: 'Point', coordinates: [longitude, latitude] },
                         distanceField: 'distanceMeters',
-                        key: 'locationGeo',
+                        key: 'hospitalLocationGeo',
                         spherical: true,
                         maxDistance: maxDistance
                     }
@@ -60,7 +62,9 @@ exports.getAllDonationRequests = async (req, res) => {
             const agg = [];
             if (Object.keys(match).length) agg.push({ $match: match });
 
-            // Add nearIndex (position in hospitalIds) and normalized index for sorting
+            // Add nearIndex (position in hospitalIds) and compute hospitalDistance
+            // Also create a normalized distance field so that documents without a
+            // nearby hospital appear last when sorting (use large sentinel)
             agg.push({
                 $addFields: {
                     nearIndex: { $indexOfArray: [hospitalIds, '$hospitalId'] }
@@ -69,7 +73,11 @@ exports.getAllDonationRequests = async (req, res) => {
             agg.push({
                 $addFields: {
                     nearIndexNormalized: { $cond: [{ $lt: ['$nearIndex', 0] }, 999999, '$nearIndex'] },
-                    hospitalDistance: { $cond: [{ $lt: ['$nearIndex', 0] }, null, { $arrayElemAt: [hospitalDistances, '$nearIndex'] }] }
+                    // `distanceMeters` will be null for requests whose hospitalId
+                    // wasn't in the nearbyHospitals list. We also provide a
+                    // normalized numeric field so missing distances sort last.
+                    distanceMeters: { $cond: [{ $lt: ['$nearIndex', 0] }, null, { $arrayElemAt: [hospitalDistances, '$nearIndex'] }] },
+                    distanceMetersNormalized: { $cond: [{ $lt: ['$nearIndex', 0] }, 999999999, { $arrayElemAt: [hospitalDistances, '$nearIndex'] }] }
                 }
             });
 
@@ -84,8 +92,10 @@ exports.getAllDonationRequests = async (req, res) => {
             });
             agg.push({ $unwind: { path: '$hospitalDetails', preserveNullAndEmptyArrays: true } });
 
-            // Sort requests: nearby hospitals first (nearIndexNormalized asc), then fallback by createdAt desc
-            agg.push({ $sort: { nearIndexNormalized: 1, requestDate: -1 } });
+            // Sort requests by actual hospital distance (ascending) so nearest
+            // hospitals' requests appear first. Documents without a nearby hospital
+            // will have a very large `distanceMetersNormalized` and appear last.
+            agg.push({ $sort: { distanceMetersNormalized: 1, requestDate: -1 } });
 
             const results = await DonationRequest.aggregate(agg);
 
@@ -177,6 +187,14 @@ exports.createDonationRequest = async (req, res) => {
 
         // Prepare body and, if hospitalId provided, snapshot hospital details
         const body = { ...req.body };
+        // Attach requestedBy from authenticated user context if available
+        try {
+            const userCtx = req.user || {};
+            const requesterId = userCtx._id || userCtx.userId || userCtx.id || null;
+            if (requesterId) body.requestedBy = String(requesterId);
+        } catch (e) {
+            // ignore if user context missing
+        }
         if (body.hospitalId) {
             let hospital = null;
             try {

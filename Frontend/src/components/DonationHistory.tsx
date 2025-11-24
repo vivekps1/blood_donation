@@ -36,6 +36,7 @@ interface DonationRecord {
   fulfilledAt?: string | Date | null;
   closedAt?: string | Date | null;
   closedReason?: string;
+  fulfilledByNames?: string[];
 }
 
 export default function DonationHistory({  }: DonationHistoryProps) {
@@ -359,10 +360,8 @@ export default function DonationHistory({  }: DonationHistoryProps) {
               <section>
                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Fulfillment</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Fulfilled By" value={selectedRecord.fulfilledByName || selectedRecord.fulfilledBy || '-'} />
+                  <Detail label="Fulfilled By" value={selectedRecord.fulfilledByNames?.toString() || selectedRecord.fulfilledBy || '-'} />
                   <Detail label="Fulfilled At" value={selectedRecord.fulfilledAt ? new Date(selectedRecord.fulfilledAt).toLocaleString() : '-'} />
-                  <Detail label="Closed At" value={selectedRecord.closedAt ? new Date(selectedRecord.closedAt).toLocaleString() : '-'} />
-                  <Detail label="Closed Reason" value={selectedRecord.closedReason || '-'} full />
                 </div>
               </section>
             </div>
