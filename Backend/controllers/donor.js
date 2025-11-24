@@ -137,19 +137,63 @@ const getAlldonors = async (req, res) => {
 
 //Update Donor 
 
-const updateDonor = async (req, res) => {
- try{
+const User = require('../models/User');
 
-    const updateDonor = await Donor.findByIdAndUpdate(
-        req.params.id , 
-        {$set:req.body}, 
-        {new:true}
-    )
-    res.status(201).json(updateDonor)
- }  catch(error){
-    res.status(500).json(error)
- } 
-} ; 
+const updateDonor = async (req, res) => {
+    try {
+        const donorId = req.params.id;
+        const donor = await Donor.findById(donorId);
+        if (!donor) return res.status(404).json({ message: 'Donor not found' });
+
+        // If admin is changing email/phone, ensure no duplicate in users collection (excluding linked user)
+        if (req.body.email || req.body.phoneNumber) {
+            const or = [];
+            if (req.body.email) or.push({ email: req.body.email });
+            if (req.body.phoneNumber) or.push({ phoneNumber: req.body.phoneNumber });
+            if (or.length) {
+                const conflictUser = await User.findOne({ $or: or, _id: { $ne: donor.userId } }).lean();
+                if (conflictUser) {
+                    const fields = {};
+                    if (req.body.email && conflictUser.email === req.body.email) fields.email = true;
+                    if (req.body.phoneNumber && conflictUser.phoneNumber === req.body.phoneNumber) fields.phoneNumber = true;
+                    return res.status(409).json({ code: 'DUPLICATE', msg: 'Email or phone number already exists', fields });
+                }
+            }
+        }
+
+        // Prepare donor update
+        const donorUpdate = { ...req.body };
+        // If name provided, do not split yet; will handle user sync
+        const updatedDonor = await Donor.findByIdAndUpdate(
+            donorId,
+            { $set: donorUpdate },
+            { new: true }
+        );
+
+        // Sync back to user if linked
+        if (donor.userId) {
+            const userUpdate = {};
+            if (req.body.name) {
+                const parts = String(req.body.name).trim().split(' ');
+                userUpdate.firstName = parts[0];
+                userUpdate.lastName = parts.slice(1).join(' ') || '';
+            }
+            ['email','address','phoneNumber','bloodGroup','height','weight','dateofBirth'].forEach(f => {
+                if (req.body[f] !== undefined) userUpdate[f] = req.body[f];
+            });
+            if (req.body.dateofBirth) {
+                userUpdate.dateofBirth = req.body.dateofBirth;
+            }
+            if (Object.keys(userUpdate).length > 0) {
+                await User.findByIdAndUpdate(donor.userId, { $set: userUpdate });
+            }
+        }
+
+        res.status(201).json(updatedDonor);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 
 //GET One Donor 
 

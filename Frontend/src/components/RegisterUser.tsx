@@ -73,7 +73,7 @@ export default function RegisterUser({
     console.log('Login:', loginData);
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (registerData.password !== registerData.confirmPassword) {
       alert('Passwords do not match');
@@ -127,8 +127,19 @@ export default function RegisterUser({
       // create a simple username if backend expects one
       userName: `${registerData.firstName || ''}${registerData.lastName || ''}`.toLowerCase()
     };
-    console.log('Register payload:', payload);
-    onRegister && onRegister(payload);
+    try {
+      await onRegister?.(payload);
+    } catch (err: any) {
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.fields) {
+        if (data.fields.email) setEmailError('Email already exists');
+        if (data.fields.phoneNumber) setPhoneError('Phone number already exists');
+        return;
+      }
+      // fallback
+      setEmailError('');
+      setPhoneError('');
+    }
   };
 
   // Live validation when user types
@@ -232,17 +243,21 @@ export default function RegisterUser({
 
             <div>
               <div>
-                <div className="relative h-12">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="tel"
-                    placeholder="Phone Number *"
-                    value={registerData.phone}
-                    onChange={(e) => onPhoneChange(e.target.value)}
-                    className="w-full pl-10 pr-4 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    autoComplete="tel"
-                    required
-                  />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-red-600">*</span></label>
+                <div className="flex w-full h-12">
+                  <span className="px-3 py-3 border rounded-l-lg bg-gray-100 text-sm text-gray-700 select-none">+91</span>
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="tel"
+                      placeholder="10-digit number"
+                      value={registerData.phone}
+                      onChange={(e) => onPhoneChange(e.target.value)}
+                      className="w-full pl-10 pr-4 h-12 border border-l-0 border-gray-300 rounded-r-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      autoComplete="tel"
+                      required
+                    />
+                  </div>
                 </div>
                 {phoneError && <div className="text-sm text-red-600 mt-2">{phoneError}</div>}
               </div>

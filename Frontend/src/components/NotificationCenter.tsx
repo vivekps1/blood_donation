@@ -1,6 +1,6 @@
 import  React, { useEffect, useState } from 'react';
 import Cookies from 'js-cookie';
-import { Bell, Mail, Phone, Send, Check, Clock, AlertCircle } from 'lucide-react';
+import { Bell, BellOff, Mail, Phone, Send, Check, Clock, AlertCircle } from 'lucide-react';
 import type { Notification } from '../types';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsReadForUser, createNotificationApi } from '../utils/axios';
 
@@ -176,10 +176,40 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
 
           {/* Notifications List */}
           <div className="space-y-4">
-            {loading && <div className="p-4">Loading notifications...</div>}
+            {loading && (
+              <div className="space-y-4">
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <div key={idx} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                    <div className="flex items-start space-x-4 animate-pulse">
+                      <div className="w-5 h-5 rounded-full bg-gray-200 mt-1" />
+                      <div className="flex-1 space-y-3">
+                        <div className="h-5 bg-gray-200 rounded w-1/3" />
+                        <div className="h-4 bg-gray-200 rounded w-2/3" />
+                        <div className="flex space-x-3 pt-2">
+                          <div className="h-4 bg-gray-200 rounded w-24" />
+                          <div className="h-4 bg-gray-200 rounded w-20" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {error && <div className="p-4 text-red-600">{error}</div>}
             {!loading && !error && filteredNotifications.length === 0 && (
-              <div className="p-4 text-gray-600">No notifications</div>
+              <div className="bg-white rounded-lg p-10 shadow-sm border border-gray-200 text-center">
+                <div className="mx-auto w-12 h-12 flex items-center justify-center rounded-full bg-purple-50 mb-3">
+                  <BellOff className="w-6 h-6 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">You're all caught up</h3>
+                <p className="text-gray-600 mt-1">No notifications to show right now.</p>
+                <button
+                  onClick={fetchNotifications}
+                  className="mt-4 text-sm text-purple-600 hover:text-purple-800"
+                >
+                  Reload
+                </button>
+              </div>
             )}
             {filteredNotifications.map((notification) => (
               <div

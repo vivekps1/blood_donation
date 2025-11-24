@@ -43,6 +43,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const [browserLat, setBrowserLat] = useState<number | null>(null);
   const [browserLng, setBrowserLng] = useState<number | null>(null);
   const [browserAccuracy, setBrowserAccuracy] = useState<number | null>(null);
+  const [hospitalDropdownOpen, setHospitalDropdownOpen] = useState<boolean>(false);
+  const [hospitalSearchTerm, setHospitalSearchTerm] = useState<string>('');
   const [formData, setFormData] = useState<any>({
     patientName: '',
     bloodGroup: '',
@@ -111,8 +113,16 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     // fetch hospitals for request creation
     const fetchHospitals = async () => {
       try {
-        const res:any = await getAllHospitals();
-        setHospitals(res.data || []);
+        // Fetch all hospitals by using a large page size
+        const res:any = await getAllHospitals(1, 1000);
+        // Filter to only show verified hospitals
+        const allHospitals = res.data?.hospitals || res.data || [];
+        const verifiedHospitals = allHospitals.filter((h: any) => h.isVerified === true);
+        // Sort by hospital name in ascending order
+        verifiedHospitals.sort((a: any, b: any) => 
+          (a.hospitalName || '').localeCompare(b.hospitalName || '')
+        );
+        setHospitals(verifiedHospitals);
       } catch (err) {
         console.warn('Failed to load hospitals', err);
       }
@@ -124,8 +134,16 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   useEffect(() => {
     const fetchHospitals = async () => {
       try {
-        const res: any = await getAllHospitals();
-        setHospitals(res.data || []);
+        // Fetch all hospitals by using a large page size
+        const res: any = await getAllHospitals(1, 1000);
+        // Filter to only show verified hospitals
+        const allHospitals = res.data?.hospitals || res.data || [];
+        const verifiedHospitals = allHospitals.filter((h: any) => h.isVerified === true);
+        // Sort by hospital name in ascending order
+        verifiedHospitals.sort((a: any, b: any) => 
+          (a.hospitalName || '').localeCompare(b.hospitalName || '')
+        );
+        setHospitals(verifiedHospitals);
       } catch (err) {
         console.error('Failed to fetch hospitals', err);
       }
@@ -443,22 +461,97 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       <option value="normal">Normal</option>
                     </select>
                     <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-                    {/* Select an existing hospital instead of free-text location */}
-                    <select
-                      name="hospitalId"
-                      value={formData.hospitalId || ''}
-                      onChange={(e) => setFormData((prev: any) => ({
-                        ...prev,
-                        hospitalId: e.target.value || undefined,
-                        location: hospitals.find(h => h._id === e.target.value)?.address || prev.location,
-                      }))}
-                      className="border p-2 rounded"
-                    >
-                      <option value="">Select hospital (optional)</option>
-                      {hospitals.map((h) => (
-                        <option key={h._id} value={h._id}>{h.hospitalName} - {h.address}</option>
-                      ))}
-                    </select>
+                    {/* Custom hospital dropdown */}
+                    <div className="relative">
+                      <div
+                        className="border p-2 rounded bg-white cursor-pointer min-w-[400px]"
+                        onClick={() => setHospitalDropdownOpen(!hospitalDropdownOpen)}
+                      >
+                        {formData.hospitalId ? (
+                          <div>
+                            <div className="font-medium">
+                              {hospitals.find(h => h._id === formData.hospitalId)?.hospitalName}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">
+                              {hospitals.find(h => h._id === formData.hospitalId)?.address}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-500">Select hospital</span>
+                        )}
+                      </div>
+                      {hospitalDropdownOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => {
+                              setHospitalDropdownOpen(false);
+                              setHospitalSearchTerm('');
+                            }}
+                          />
+                          <div className="absolute z-20 mt-1 min-w-[400px] max-h-[350px] bg-white border rounded shadow-lg flex flex-col">
+                            {/* Search bar */}
+                            <div className="p-2 border-b sticky top-0 bg-white">
+                              <input
+                                type="text"
+                                placeholder="Search hospitals..."
+                                value={hospitalSearchTerm}
+                                onChange={(e) => setHospitalSearchTerm(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            {/* Hospital list */}
+                            <div className="overflow-auto flex-1">
+                              <div className="min-w-max">
+                                <div
+                                  className="p-2 hover:bg-gray-100 cursor-pointer"
+                                  onClick={() => {
+                                    setFormData((prev: any) => ({
+                                      ...prev,
+                                      hospitalId: undefined,
+                                      location: '',
+                                    }));
+                                    setHospitalDropdownOpen(false);
+                                    setHospitalSearchTerm('');
+                                  }}
+                                >
+                                  <span className="text-gray-500">Select hospital</span>
+                                </div>
+                                {hospitals
+                                  .filter((h) => {
+                                    if (!hospitalSearchTerm) return true;
+                                    const searchLower = hospitalSearchTerm.toLowerCase();
+                                    return (
+                                      h.hospitalName?.toLowerCase().includes(searchLower) ||
+                                      h.address?.toLowerCase().includes(searchLower) ||
+                                      h.pincode?.toLowerCase().includes(searchLower)
+                                    );
+                                  })
+                                  .map((h) => (
+                                    <div
+                                      key={h._id}
+                                      className="p-2 hover:bg-gray-100 cursor-pointer border-t"
+                                      onClick={() => {
+                                        setFormData((prev: any) => ({
+                                          ...prev,
+                                          hospitalId: h._id,
+                                          location: h.address || prev.location,
+                                        }));
+                                        setHospitalDropdownOpen(false);
+                                        setHospitalSearchTerm('');
+                                      }}
+                                    >
+                                      <div className="font-medium whitespace-nowrap">{h.hospitalName}</div>
+                                      <div className="text-xs text-gray-500 whitespace-nowrap">{h.address}</div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-4 flex justify-end space-x-2">
                     <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded border">Cancel</button>
@@ -611,9 +704,26 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
       {/* Request Cards */}
       {loading ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading donation requests...</p>
+        <div className="grid gap-6">
+          {[1,2,3].map(i => (
+            <div key={i} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 animate-pulse">
+              <div className="flex items-center space-x-3 mb-3">
+                <div className="h-6 w-40 bg-gray-200 rounded" />
+                <div className="h-5 w-16 bg-gray-200 rounded" />
+                <div className="h-5 w-24 bg-gray-200 rounded" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div className="h-10 bg-gray-200 rounded" />
+                <div className="h-10 bg-gray-200 rounded" />
+                <div className="h-10 bg-gray-200 rounded" />
+                <div className="h-10 bg-gray-200 rounded" />
+              </div>
+              <div className="flex items-center gap-6 text-sm">
+                <div className="h-4 w-48 bg-gray-200 rounded" />
+                <div className="h-4 w-56 bg-gray-200 rounded" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : error ? (
         <div className="text-center py-8">
@@ -622,7 +732,16 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         </div>
       ) : (
         <div className="grid gap-6">
-          {filteredAndSearchedRequests.map((request) => (
+          {filteredAndSearchedRequests.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border p-10 text-center">
+              <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                <Activity className="w-6 h-6 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">No donation requests found</h3>
+              <p className="text-gray-600">Try adjusting filters or creating a new request.</p>
+            </div>
+          ) : (
+          filteredAndSearchedRequests.map((request) => (
             <div key={(request as any)._id || request.requestId} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -707,7 +826,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                 </div>
               </div>
             </div>
-          ))}
+          )))
+          }
         </div>
       )}
     </div>

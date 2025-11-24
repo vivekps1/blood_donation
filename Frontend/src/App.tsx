@@ -47,20 +47,16 @@ function App() {
 
   // Function to handle user registration using the API
   const handleRegister = async (userData: any) => {
-    try {
-      const response: any = await registerUser(userData);
-      const respData: any = response.data;
-      const createdUser: any = respData.user ?? respData;
-      const token = createdUser.accessToken ?? respData.accessToken ?? respData.token ?? createdUser.token;
+    const response: any = await registerUser(userData);
+    const respData: any = response.data;
+    const createdUser: any = respData.user ?? respData;
+    const token = createdUser.accessToken ?? respData.accessToken ?? respData.token ?? createdUser.token;
 
-      setCurrentUser(createdUser);
-      setCurrentPage('users');
-      if (token) localStorage.setItem('token', token);
-      Cookies.set('user', JSON.stringify(createdUser), { expires: 7 });
-      return true;
-    } catch (error) {
-      return false;
-    }
+    setCurrentUser(createdUser);
+    setCurrentPage('users');
+    if (token) localStorage.setItem('token', token);
+    Cookies.set('user', JSON.stringify(createdUser), { expires: 7 });
+    return true;
   };
 
   if (!currentUser) {

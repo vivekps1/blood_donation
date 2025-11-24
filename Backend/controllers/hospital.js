@@ -56,11 +56,43 @@ try{
 //Get all Hospitals 
 
 const getAllHospitals = async (req, res) => {
-    try{
-        const  hospitals = await Hospital.find().sort({createdAt:-1}) ;
-        res.status(200).json(hospitals)
-    }catch(error){
-        res.status(500).json(error)
+    try {
+        // Get pagination and filter/sort params from query
+        let { page = 1, size = 10, sortField, sortOrder, search } = req.query;
+        page = parseInt(page);
+        size = parseInt(size);
+
+        // Build mongo query
+        const mongoQuery = {};
+        if (search) {
+            const re = new RegExp(String(search), 'i');
+            mongoQuery.hospitalName = re;
+        }
+
+        // Prepare sort - default to createdAt descending
+        let sortObj = { createdAt: -1 };
+        if (sortField) {
+            const order = sortOrder === 'asc' ? 1 : -1;
+            // Only allow sorting by specific fields to avoid injection
+            if (['hospitalName', 'createdAt'].includes(sortField)) {
+                sortObj = { [sortField]: order };
+            }
+        }
+
+        // Get total count for pagination
+        const total = await Hospital.countDocuments(mongoQuery);
+        const totalPages = Math.ceil(total / size) || 1;
+
+        // Fetch hospitals with pagination and sorting
+        const hospitals = await Hospital.find(mongoQuery)
+            .sort(sortObj)
+            .skip((page - 1) * size)
+            .limit(size)
+            .lean();
+
+        res.status(200).json({ hospitals, total, page, size, totalPages });
+    } catch (error) {
+        res.status(500).json(error);
     }
 }
 

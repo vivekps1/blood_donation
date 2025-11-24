@@ -9,6 +9,7 @@ const UserSchema = mongoose.Schema({
     password:{type:String, require:true}, 
     bloodGroup:{type:String, require:true}, 
     dateofBirth:{type:Date, require:true}, 
+    address:{type:String},
     height: { type: Number },
     weight: { type: Number },
     isActive:{type:Number, default:0}, 

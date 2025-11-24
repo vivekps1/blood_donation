@@ -102,8 +102,10 @@ export const UserProfile: React.FC<UserProfileProps> = ({
     }
     // default to +91 and full number
     return { country: '+91', number: p };
-  };
-
+  }; 
+  // Read admin email directly from environment (Vite) instead of user object
+  const adminEmail = (import.meta as any).env?.ADMIN_EMAIL || 'admin@yourdomain.com';
+  // console.log("Admin email (env):", adminEmail);
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       {/* Profile Header */}
@@ -150,8 +152,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({
         <h2 className="text-lg font-semibold mb-4">Personal Information</h2>
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-100 text-yellow-800 rounded">
           To change <strong>email</strong>, <strong>phone</strong>, or <strong>blood group</strong>, contact admin at{' '}
-          <a className="underline font-medium" href={`mailto:${user.adminEmail || 'admin@yourdomain.com'}`}>
-            {user.adminEmail || 'admin@yourdomain.com'}
+          <a className="underline font-medium" href={`mailto:${adminEmail}`}>
+            {adminEmail}
           </a>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
