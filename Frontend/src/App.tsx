@@ -9,7 +9,6 @@ import DonorManagement from './components/DonorManagement';
 import DonationRequests from './components/DonationRequests';
 import DonationHistory from './components/DonationHistory';
 import NotificationCenter from './components/NotificationCenter';
-import Reports from './components/Reports';
 import AuthWrapper from './components/AuthWrapper';
 import { HospitalManagement } from './components/HospitalManagement';
 
@@ -79,8 +78,6 @@ function App() {
         return <DonationRequests currentUser={currentUser} userRole={currentUser.userRole} />;
       case 'notifications':
         return <NotificationCenter currentUser={currentUser} />;
-      case 'reports':
-        return <Reports userRole={currentUser.userRole} />;
       case 'donationhistory':
         return (
           <DonationHistory
