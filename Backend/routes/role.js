@@ -4,9 +4,9 @@ const { verifyToken, verifyTokenAndAuthorization } = require('../middlewares/ver
 const router = express.Router() ;
 
 // Create a new role
-router.post('/', verifyTokenAndAuthorization, createRole);
+router.post('/', createRole);
 
 // Get all roles
-router.get('/', verifyToken, getRoles);
+router.get('/', getRoles);
 
 module.exports = router ;

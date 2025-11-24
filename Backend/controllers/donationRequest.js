@@ -2,7 +2,7 @@ const DonationRequest = require("../models/DonationRequest");
 const Hospital = require("../models/Hospital");
 const DonationHistory = require("../models/DonationHistory");
 const MedicalReport = require("../models/MedicalReport");
-const Hospital = require("../models/Hospital");
+
 
 // Get all donation requests
 exports.getAllDonationRequests = async (req, res) => {
@@ -16,6 +16,7 @@ exports.getAllDonationRequests = async (req, res) => {
         // If request made by a non-admin user, restrict to donation requests
         // where the user is listed as a volunteer (volunteers.donorId)
         const user = req.user || {};
+        let query;
         const isAdmin = typeof user.roleId !== 'undefined' && String(user.roleId) === '0';
         if (!isAdmin && query.status === 'COMPLETED') {
            
@@ -29,7 +30,7 @@ exports.getAllDonationRequests = async (req, res) => {
             }
         }
         console.log(query,"======");
-        const donationRequests = await DonationRequest.find(query);
+        var donationRequests = await DonationRequest.find(query);
 
         // If latitude/longitude provided, find nearby hospitals first and prioritize requests from them
         if (lat && lng) {
@@ -104,7 +105,7 @@ exports.getAllDonationRequests = async (req, res) => {
         });
         agg.push({ $unwind: { path: '$hospitalDetails', preserveNullAndEmptyArrays: true } });
 
-        const donationRequests = await DonationRequest.aggregate(agg);
+         donationRequests = await DonationRequest.aggregate(agg);
         
         // If requesting completed summary, compute summary
         if (match.status === 'COMPLETED') {
@@ -166,7 +167,7 @@ exports.createDonationRequest = async (req, res) => {
                 }
             }
 
-            const donationRequest = new DonationRequest({
+            var donationRequest = new DonationRequest({
                 ...payload,
                 requestDate: new Date(),
                 status: initialStatus,
@@ -207,7 +208,7 @@ exports.createDonationRequest = async (req, res) => {
             }
         }
 
-        const donationRequest = new DonationRequest({
+         donationRequest = new DonationRequest({
             ...body,
             requestDate: new Date(),
             status: initialStatus,

@@ -121,8 +121,6 @@ exports.getDonationHistoryAggregate = async (req, res) => {
           hospital: {
             hospitalId: '$hospital._id',
             hospitalName: '$hospital.hospitalName',
-            city: '$hospital.city',
-            state: '$hospital.state',
             isVerified: '$hospital.isVerified'
           },
           request: {

@@ -8,7 +8,6 @@ import {
   volunteerForDonation,
   getAllHospitals,
 } from '../utils/axios';
-import { getAllHospitals } from '../utils/axios';
 
 
 interface DonationRequest {
@@ -65,7 +64,6 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const [currentCloseRequestId, setCurrentCloseRequestId] = useState<string | null>(null);
   const [currentCloseVolunteers, setCurrentCloseVolunteers] = useState<any[]>([]);
   const [selectedFulfillVolunteers, setSelectedFulfillVolunteers] = useState<any[]>([]);
-  const [hospitals, setHospitals] = useState<any[]>([]);
 
   const fetchDonationRequests = async () => {
     try {
@@ -445,7 +443,6 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       <option value="normal">Normal</option>
                     </select>
                     <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-<<<<<<< HEAD
                     {/* Select an existing hospital instead of free-text location */}
                     <select
                       name="hospitalId"
@@ -462,19 +459,6 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                         <option key={h._id} value={h._id}>{h.hospitalName} - {h.address}</option>
                       ))}
                     </select>
-=======
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Hospital (select from list)</label>
-                      <select name="hospitalId" value={formData.hospitalId || ''} onChange={handleFormChange} className="w-full border p-2 rounded mb-2">
-                        <option value="">Select hospital (optional)</option>
-                        {hospitals.map((h: any) => (
-                          <option key={h._id} value={h._id}>{h.hospitalName}{h.address ? ` — ${h.address}` : ''}</option>
-                        ))}
-                      </select>
-                      <label className="block text-sm text-gray-600 mb-1">Or enter location manually</label>
-                      <input name="location" value={formData.location} onChange={handleFormChange} placeholder="Location" className="border p-2 rounded w-full" />
-                    </div>
->>>>>>> 8961630d47cf210101c7925cfa3ec5e0a2e0df85
                   </div>
                   <div className="mt-4 flex justify-end space-x-2">
                     <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded border">Cancel</button>
