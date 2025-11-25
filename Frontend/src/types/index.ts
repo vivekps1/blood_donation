@@ -1,8 +1,8 @@
 export  interface User {
   user_id: string;
   first_name: string;
-  last_name: string;
-  username: string;
+  last_name?: string;
+
   email: string;
   phone_number: string;
   password: string;
@@ -37,8 +37,8 @@ export interface Donor {
   address?: string;
   phoneNumber: string;
   bloodGroup: string;
-  height: string;
-  weight: string;
+  height?: string;
+  weight?: string;
   date: string;
   diseases?: string;
   age: number;

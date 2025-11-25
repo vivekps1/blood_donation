@@ -31,10 +31,12 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
 
   const openDonorModal = (donor: Donor) => {
     setSelectedDonor(donor);
+    const rawLast = donor.name ? donor.name.split(' ').slice(1).join(' ') : '';
+    const cleanedLast = rawLast && !/^(undefined|null)$/i.test(rawLast) ? rawLast : '';
     setDonorForm({
-      // split name into first/last for editing
+      // split name into first/last for editing; drop placeholder tokens
       firstName: donor.name ? donor.name.split(' ')[0] : '',
-      lastName: donor.name ? donor.name.split(' ').slice(1).join(' ') : '',
+      lastName: cleanedLast,
       email: donor.email,
       phoneNumber: donor.phoneNumber ? String(donor.phoneNumber).replace(/\D/g, '').slice(-10) : '',
       bloodGroup: donor.bloodGroup,
@@ -66,7 +68,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       // validate modal fields (firstName, email, phone, bloodGroup, dob)
       const errors: Record<string, string> = {};
       const firstName = (donorForm.firstName || '').trim();
-      const lastName = (donorForm.lastName || '').trim();
+      let lastName = (donorForm.lastName || '').trim();
+      if (/^(undefined|null)$/i.test(lastName)) lastName = '';
       const email = (donorForm.email || '').trim();
       const phoneRaw = String(donorForm.phoneNumber || '').replace(/\D/g, '');
       const bloodGroup = (donorForm.bloodGroup || '').trim();
@@ -93,7 +96,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       }
 
       const payload: any = {
-        name: `${firstName}${lastName ? ' ' + lastName : ''}`,
+        name: `${firstName}${lastName ? ' ' + lastName : ''}`.trim(),
         email,
         // save phoneNumber with +91 prefix
         phoneNumber: `+91${phoneRaw}`,
@@ -411,19 +414,19 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         paginatedDonors.map((donor) => {
           const totalDonations = donor.totalDonations ?? '-';
           const lastDonationDate = donor.lastDonationDate ? new Date(donor.lastDonationDate).toLocaleDateString() : 'N/A';
-          const lastStatus = donor.lastStatus ?? 'N/A';
           const eligibility = { status: donor.eligibility ?? 'N/A', message: donor.eligibility ?? 'N/A' };
+          const displayName = donor.name ? donor.name.replace(/\b(undefined|null)\b/gi, '').trim().replace(/\s+/g,' ') || '-' : '-';
           return (
             <div key={donor._id} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-4 flex-1">
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    {donor.name ? donor.name[0] : ''}
+                    {displayName && displayName !== '-' ? displayName[0] : ''}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <h3 className="text-xl font-semibold text-gray-900">
-                        {donor.name}
+                        {displayName}
                       </h3>
                       <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
                         {donor.bloodGroup}
@@ -445,7 +448,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                       </div>
                       <div className="flex items-center space-x-2 text-gray-600">
                         <MapPin className="w-4 h-4" />
-                        <span className="text-sm">{donor.address}</span>
+                        <span className="text-sm">{donor.address || '-'}</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
@@ -465,19 +468,10 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                         <p className="text-gray-500">Weight</p>
                         <p className="font-medium">{donor.weight ? `${donor.weight} kg` : '-'}</p>
                       </div>
-                      <div>
-                        <p className="text-gray-500">Last Status</p>
-                        <p className="font-medium">{lastStatus}</p>
-                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="flex space-x-2">
-                  {eligibility.status === 'eligible' && (
-                    <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
-                      Notify for Donation
-                    </button>
-                  )}
                   {userRole === 'admin' && (
                     <button
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"
@@ -497,9 +491,9 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
 
     {selectedDonor && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative max-h-[90vh] overflow-y-auto">
+        <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative">
           <div className="flex items-center justify-between border-b px-6 py-4">
-            <h2 className="text-lg font-semibold">Edit Donor - {selectedDonor.name}</h2>
+            <h2 className="text-lg font-semibold">Edit Donor - {selectedDonor.name ? selectedDonor.name.replace(/\b(undefined|null)\b/gi,'').trim().replace(/\s+/g,' ') || '-' : '-'}</h2>
             <button onClick={closeDonorModal} className="text-gray-500 hover:text-gray-700">
               <X className="w-5 h-5" />
             </button>

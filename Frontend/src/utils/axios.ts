@@ -8,7 +8,8 @@ export const getAllHospitals = (
   size = 10,
   sortField?: string,
   sortOrder?: string,
-  search?: string
+  search?: string,
+  isVerified?: boolean
 ) => {
   const params = new URLSearchParams();
   params.append('page', String(page));
@@ -16,6 +17,7 @@ export const getAllHospitals = (
   if (sortField) params.append('sortField', sortField);
   if (sortOrder) params.append('sortOrder', sortOrder);
   if (search) params.append('search', search);
+  if (typeof isVerified === 'boolean') params.append('isVerified', String(isVerified));
   return api.get(`/hospitals?${params.toString()}`);
 };
 export const createHospital = (hospitalData: any) => api.post('/hospitals', hospitalData);
@@ -45,6 +47,17 @@ api.interceptors.request.use(config => {
   }
   return config;
 });
+
+// Add a response interceptor to handle errors
+api.interceptors.response.use(
+  response => response,
+  error => {
+    console.log('Axios interceptor error:', error);
+    console.log('Axios error response:', error.response);
+    // Re-throw the error so it can be caught by the caller
+    return Promise.reject(error);
+  }
+);
 
 
 
@@ -82,12 +95,15 @@ export const updateDonor = (id: any, donorData: any) => api.put(`/donors/${id}`,
 export const deleteDonor = (id: any) => api.delete(`/donors/${id}`);
 
 // Donation Request APIs
-export const getAllDonationRequests = (filters?: { status?: string; lat?: number; lng?: number; radius?: number }) => {
+export const getAllDonationRequests = (filters?: { status?: string; lat?: number; lng?: number; radius?: number; accuracy?: number }) => {
   const params = new URLSearchParams();
   if (filters?.status && filters.status !== 'all') params.append('status', String(filters.status));
   if (typeof filters?.lat !== 'undefined' && typeof filters?.lng !== 'undefined') {
     params.append('lat', String(filters.lat));
     params.append('lng', String(filters.lng));
+    if (typeof filters?.accuracy !== 'undefined') {
+      params.append('accuracy', String(filters.accuracy));
+    }
   }
   if (filters?.radius) params.append('radius', String(filters.radius));
   const qs = params.toString();
@@ -120,6 +136,9 @@ export const registerUser = (userData: any) => api.post('/auth/register', userDa
 
 // Get donor stats
 export const getDonorsStats = () => api.get('/donors/stats');
+
+// System-wide stats
+export const getSystemStats = () => api.get('/stats');
 
 // Get donation history stats
 export const getDonationEntriesStats = () => api.get('/donation/history/stats');

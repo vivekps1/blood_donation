@@ -58,7 +58,7 @@ try{
 const getAllHospitals = async (req, res) => {
     try {
         // Get pagination and filter/sort params from query
-        let { page = 1, size = 10, sortField, sortOrder, search } = req.query;
+        let { page = 1, size = 10, sortField, sortOrder, search, isVerified } = req.query;
         page = parseInt(page);
         size = parseInt(size);
 
@@ -67,6 +67,11 @@ const getAllHospitals = async (req, res) => {
         if (search) {
             const re = new RegExp(String(search), 'i');
             mongoQuery.hospitalName = re;
+        }
+
+        // Add isVerified filter if provided
+        if (isVerified !== undefined && isVerified !== null && isVerified !== '') {
+            mongoQuery.isVerified = isVerified === 'true';
         }
 
         // Prepare sort - default to createdAt descending

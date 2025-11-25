@@ -59,6 +59,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const [volunteerModalOpen, setVolunteerModalOpen] = useState<boolean>(false);
   const [volunteerForm, setVolunteerForm] = useState<any>({ expectedDonationTime: '', contact: '', message: '' });
   const [currentVolunteerRequestId, setCurrentVolunteerRequestId] = useState<string | null>(null);
+  const [currentRequestRequiredDate, setCurrentRequestRequiredDate] = useState<string | null>(null);
+  const [dateInputType, setDateInputType] = useState<'text' | 'datetime-local'>('text');
   const [showVolunteersModal, setShowVolunteersModal] = useState<boolean>(false);
   const [selectedVolunteers, setSelectedVolunteers] = useState<any[]>([]);
   const [closeModalOpen, setCloseModalOpen] = useState<boolean>(false);
@@ -74,24 +76,14 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const statusParam = statusFilter && statusFilter !== 'all' ? statusFilter.toUpperCase() : undefined;
   const filters: any = {};
   if (statusParam) filters.status = statusParam;
-  // include coordinates to let backend sort by proximity
-  // Priority: if user is a donor and browser geolocation is available, use browser coords.
-  // If browser geolocation is available use it (preferred). This will be set for donors
-  // but we send it whenever available so the backend can use it for proximity ordering.
-  if (browserLat != null && browserLng != null) {
+  // include coordinates to let backend sort by proximity ONLY when the
+  // current user is a donor and browser geolocation is available.
+  // Do NOT fall back to stored user coordinates here — we only send
+  // browser-provided coords as requested.
+  if (userRole === 'donor' && browserLat != null && browserLng != null) {
     filters.lat = browserLat;
     filters.lng = browserLng;
     if (browserAccuracy != null) filters.accuracy = browserAccuracy;
-  } else if (currentUser) {
-    // fall back to stored user coordinates
-    if (typeof currentUser.latitude === 'number' && typeof currentUser.longitude === 'number') {
-      filters.lat = currentUser.latitude;
-      filters.lng = currentUser.longitude;
-    } else if (currentUser.locationGeo && Array.isArray(currentUser.locationGeo.coordinates) && currentUser.locationGeo.coordinates.length >= 2) {
-      // locationGeo stored as [lng, lat]
-      filters.lat = currentUser.locationGeo.coordinates[1];
-      filters.lng = currentUser.locationGeo.coordinates[0];
-    }
   }
   const response = await getAllDonationRequests(filters as any);
       // assume response.data is an array of DonationRequest-like objects
@@ -109,8 +101,10 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   };
 
   useEffect(() => {
-    fetchDonationRequests();
-    // fetch hospitals for request creation
+    // Consolidated behavior: for donors, try to get browser geolocation on mount
+    // and only fetch donation requests after position is obtained (or when
+    // geolocation fails). For non-donors, fetch immediately.
+
     const fetchHospitals = async () => {
       try {
         // Fetch all hospitals by using a large page size
@@ -127,9 +121,61 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         console.warn('Failed to load hospitals', err);
       }
     };
-    fetchHospitals();
+
+    // Helper to trigger fetch once (prevents multiple calls when position updates)
+    const triggerFetch = () => fetchDonationRequests();
+
+    if (userRole !== 'donor') {
+      triggerFetch();
+      fetchHospitals();
+      return; // non-donor behavior complete
+    }
+
+    // If donor and we already have coords, fetch immediately
+    if (browserLat != null && browserLng != null) {
+      triggerFetch();
+      fetchHospitals();
+      return;
+    }
+
+    // For donors without coords, attempt to obtain browser geolocation now
+    if (!navigator.geolocation) {
+      console.warn('Geolocation not supported by browser');
+      // fallback: fetch without coords
+      triggerFetch();
+      fetchHospitals();
+      return;
+    }
+
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (cancelled) return;
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null;
+        setBrowserLat(lat);
+        setBrowserLng(lng);
+        setBrowserAccuracy(acc);
+        // fetch requests with coords
+        triggerFetch();
+        fetchHospitals();
+      },
+      (err) => {
+        if (cancelled) return;
+        console.warn('Geolocation error', err.message);
+        // still fetch requests without coords
+        triggerFetch();
+        fetchHospitals();
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5000 }
+    );
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [statusFilter, userRole]);
 
   useEffect(() => {
     const fetchHospitals = async () => {
@@ -151,33 +197,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     fetchHospitals();
   }, []);
 
-  // If user is a donor, attempt to get browser geolocation and refresh requests using it
-  useEffect(() => {
-    if (userRole !== 'donor') return;
-    if (!navigator.geolocation) {
-      console.warn('Geolocation not supported by browser');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const acc = typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null;
-        setBrowserLat(lat);
-        setBrowserLng(lng);
-        setBrowserAccuracy(acc);
-        // re-fetch donation requests with browser coords
-        fetchDonationRequests();
-      },
-      (err) => {
-        console.warn('Geolocation error', err.message);
-        // still fetch requests without coords
-        fetchDonationRequests();
-      },
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5000 }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRole]);
+  
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -186,11 +206,21 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
   const filteredAndSearchedRequests = requests.filter((request) => {
     const reqStatus = (request.status || '').toString().toLowerCase();
     const matchesStatus = statusFilter === 'all' || reqStatus === statusFilter;
-    // For donor users, only allow approved requests. Treat closed/completed as approved on the frontend
+    // For donor users, allow approved or closed requests. Also allow the
+    // requesting user to see their own pending requests (requestedBy === currentUser id).
     if (userRole === 'donor') {
       const isApprovedBackend = ('approved' in request) ? Boolean((request as any).approved) : reqStatus === 'approved';
-      const isApprovedEffective = isApprovedBackend || reqStatus === 'closed' || reqStatus === 'completed' || reqStatus === 'approved';
-      if (!isApprovedEffective) return false;
+      const isClosed = reqStatus === 'closed';
+      const isApprovedEffective = isApprovedBackend || isClosed || reqStatus === 'approved';
+
+      // If user is the one who created/requested this donation, allow them to see it even if pending
+      const currentUserId = currentUser ? (currentUser._id || currentUser.id || currentUser.userId) : null;
+      const isRequester = currentUserId && ((request as any).requestedBy && String((request as any).requestedBy) === String(currentUserId));
+
+      // Exclude completed requests for donors
+      if (reqStatus === 'completed') return false;
+
+      if (!isApprovedEffective && !isRequester) return false;
     }
     const lower = searchTerm.trim().toLowerCase();
     const matchesSearch =
@@ -249,6 +279,12 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     return volunteers.some((v: any) => String(v.donorId) === String(userDonorId));
   };
 
+  const isUserRequestCreator = (request: any) => {
+    if (!userDonorId) return false;
+    const requestedBy = request.requestedBy;
+    return requestedBy && String(requestedBy) === String(userDonorId);
+  };
+
   const handleNewRequest = async () => {
     // open modal for admin to input details
     setShowModal(true);
@@ -296,7 +332,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     }
   };
 
-  const handleVolunteer = async (requestId: string) => {
+  const handleVolunteer = async (requestId: string, requiredDate: string) => {
     // Use the currentUser passed as prop instead of localStorage
     if (!currentUser) {
       alert('Please log in to volunteer');
@@ -313,6 +349,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     const prefillContact = currentUser.phoneNumber || currentUser.phone || currentUser.contact || currentUser.mobile || '';
 
     setCurrentVolunteerRequestId(requestId);
+    setCurrentRequestRequiredDate(requiredDate);
+    setDateInputType('text');
     setVolunteerForm((prev: any) => ({
       ...prev,
       contact: prefillContact || prev.contact || '',
@@ -328,7 +366,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
       if (!currentUser) return alert('Please log in to volunteer');
 
       const donorId = currentUser._id || currentUser.id || currentUser.userId || '';
-      const donorName = currentUser.name || currentUser.fullName || currentUser.userName || currentUser.firstName || '';
+      const donorName = currentUser.name || currentUser.fullName || currentUser.firstName || '';
 
       // basic validation
       if (!volunteerForm.contact || volunteerForm.contact.trim() === '') {
@@ -408,8 +446,8 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         const fulfilledByNames = selectedFulfillVolunteers.map((s) => s.donorName || s.donorId || '');
         payload.fulfilledByList = fulfilledByList;
         payload.fulfilledByNames = fulfilledByNames;
-        payload.fulfilledBy = fulfilledByList[0] || '';
-        payload.fulfilledByName = fulfilledByNames[0] || '';
+        payload.fulfilledBy = fulfilledByNames.toString();
+        payload.fulfilledByName = fulfilledByNames.toString();
       }
       await updateDonationRequest(currentCloseRequestId, payload as any);
       setCloseModalOpen(false);
@@ -430,7 +468,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
           <Activity className="w-7 h-7 text-red-600 mr-3" />
           Donation Requests
         </h1>
-        {(userRole === 'hospital' || userRole === 'admin') && (
+        {(
           <>
             <button onClick={handleNewRequest} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center">
               <Plus className="w-4 h-4 mr-2" />
@@ -461,95 +499,22 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       <option value="normal">Normal</option>
                     </select>
                     <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-                    {/* Custom hospital dropdown */}
-                    <div className="relative">
-                      <div
-                        className="border p-2 rounded bg-white cursor-pointer min-w-[400px]"
-                        onClick={() => setHospitalDropdownOpen(!hospitalDropdownOpen)}
-                      >
-                        {formData.hospitalId ? (
-                          <div>
-                            <div className="font-medium">
-                              {hospitals.find(h => h._id === formData.hospitalId)?.hospitalName}
-                            </div>
-                            <div className="text-xs text-gray-500 truncate">
-                              {hospitals.find(h => h._id === formData.hospitalId)?.address}
-                            </div>
+                    {/* Hospital selection button */}
+                    <div
+                      className="border p-2 rounded bg-white cursor-pointer"
+                      onClick={() => setHospitalDropdownOpen(true)}
+                    >
+                      {formData.hospitalId ? (
+                        <div>
+                          <div className="font-medium">
+                            {hospitals.find(h => h._id === formData.hospitalId)?.hospitalName}
                           </div>
-                        ) : (
-                          <span className="text-gray-500">Select hospital</span>
-                        )}
-                      </div>
-                      {hospitalDropdownOpen && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-10"
-                            onClick={() => {
-                              setHospitalDropdownOpen(false);
-                              setHospitalSearchTerm('');
-                            }}
-                          />
-                          <div className="absolute z-20 mt-1 min-w-[400px] max-h-[350px] bg-white border rounded shadow-lg flex flex-col">
-                            {/* Search bar */}
-                            <div className="p-2 border-b sticky top-0 bg-white">
-                              <input
-                                type="text"
-                                placeholder="Search hospitals..."
-                                value={hospitalSearchTerm}
-                                onChange={(e) => setHospitalSearchTerm(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            </div>
-                            {/* Hospital list */}
-                            <div className="overflow-auto flex-1">
-                              <div className="min-w-max">
-                                <div
-                                  className="p-2 hover:bg-gray-100 cursor-pointer"
-                                  onClick={() => {
-                                    setFormData((prev: any) => ({
-                                      ...prev,
-                                      hospitalId: undefined,
-                                      location: '',
-                                    }));
-                                    setHospitalDropdownOpen(false);
-                                    setHospitalSearchTerm('');
-                                  }}
-                                >
-                                  <span className="text-gray-500">Select hospital</span>
-                                </div>
-                                {hospitals
-                                  .filter((h) => {
-                                    if (!hospitalSearchTerm) return true;
-                                    const searchLower = hospitalSearchTerm.toLowerCase();
-                                    return (
-                                      h.hospitalName?.toLowerCase().includes(searchLower) ||
-                                      h.address?.toLowerCase().includes(searchLower) ||
-                                      h.pincode?.toLowerCase().includes(searchLower)
-                                    );
-                                  })
-                                  .map((h) => (
-                                    <div
-                                      key={h._id}
-                                      className="p-2 hover:bg-gray-100 cursor-pointer border-t"
-                                      onClick={() => {
-                                        setFormData((prev: any) => ({
-                                          ...prev,
-                                          hospitalId: h._id,
-                                          location: h.address || prev.location,
-                                        }));
-                                        setHospitalDropdownOpen(false);
-                                        setHospitalSearchTerm('');
-                                      }}
-                                    >
-                                      <div className="font-medium whitespace-nowrap">{h.hospitalName}</div>
-                                      <div className="text-xs text-gray-500 whitespace-nowrap">{h.address}</div>
-                                    </div>
-                                  ))}
-                              </div>
-                            </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {hospitals.find(h => h._id === formData.hospitalId)?.address}
                           </div>
-                        </>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">Select hospital</span>
                       )}
                     </div>
                   </div>
@@ -560,21 +525,113 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                 </div>
               </div>
             )}
+
+            {/* Hospital selection overlay popup */}
+            {hospitalDropdownOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{ zIndex: 9999 }}>
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                  <div className="p-4 border-b">
+                    <h3 className="text-lg font-semibold">Select Hospital</h3>
+                  </div>
+                  <div className="p-4 border-b">
+                    <input
+                      type="text"
+                      placeholder="Search hospitals..."
+                      value={hospitalSearchTerm}
+                      onChange={(e) => setHospitalSearchTerm(e.target.value)}
+                      className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-4">
+                    <div
+                      className="p-3 hover:bg-gray-100 cursor-pointer rounded mb-2"
+                      onClick={() => {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          hospitalId: undefined,
+                          location: '',
+                        }));
+                        setHospitalDropdownOpen(false);
+                        setHospitalSearchTerm('');
+                      }}
+                    >
+                      <span className="text-gray-500">None (Clear selection)</span>
+                    </div>
+                    {hospitals
+                      .filter((h) => {
+                        if (!hospitalSearchTerm) return true;
+                        const searchLower = hospitalSearchTerm.toLowerCase();
+                        return (
+                          h.hospitalName?.toLowerCase().includes(searchLower) ||
+                          h.address?.toLowerCase().includes(searchLower) ||
+                          h.pincode?.toLowerCase().includes(searchLower)
+                        );
+                      })
+                      .map((h) => (
+                        <div
+                          key={h._id}
+                          className="p-3 hover:bg-blue-50 cursor-pointer border rounded mb-2"
+                          onClick={() => {
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              hospitalId: h._id,
+                              location: h.address || prev.location,
+                            }));
+                            setHospitalDropdownOpen(false);
+                            setHospitalSearchTerm('');
+                          }}
+                        >
+                          <div className="font-medium">{h.hospitalName}</div>
+                          <div className="text-sm text-gray-600">{h.address}</div>
+                          {h.pincode && <div className="text-xs text-gray-500">Pincode: {h.pincode}</div>}
+                        </div>
+                      ))}
+                  </div>
+                  <div className="p-4 border-t flex justify-end">
+                    <button
+                      onClick={() => {
+                        setHospitalDropdownOpen(false);
+                        setHospitalSearchTerm('');
+                      }}
+                      className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             
           </>
         )}
       </div>
       {/* Volunteer confirmation modal for donors */}
       {volunteerModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md m-4">
             <h2 className="text-xl font-semibold mb-4">Volunteer for Donation</h2>
             <div className="grid grid-cols-1 gap-3">
               <label className="text-sm font-medium">Contact number</label>
               <input aria-label="contact" name="contact" value={volunteerForm.contact} onChange={(e) => setVolunteerForm((p:any)=>({...p, contact: e.target.value}))} placeholder="e.g. +1 555 555 5555" className="border p-2 rounded" />
 
               <label className="text-sm font-medium">Expected donation date & time</label>
-              <input aria-label="expectedDonationTime" name="expectedDonationTime" type="datetime-local" value={volunteerForm.expectedDonationTime} onChange={(e) => setVolunteerForm((p:any)=>({...p, expectedDonationTime: e.target.value}))} className="border p-2 rounded" />
+              <input 
+                aria-label="expectedDonationTime" 
+                name="expectedDonationTime" 
+                type={dateInputType} 
+                value={volunteerForm.expectedDonationTime} 
+                onChange={(e) => setVolunteerForm((p:any)=>({...p, expectedDonationTime: e.target.value}))} 
+                min={new Date().toISOString().slice(0, 16)}
+                max={currentRequestRequiredDate ? new Date(currentRequestRequiredDate).toISOString().slice(0, 16) : undefined}
+                className="border p-2 rounded"
+                placeholder="dd/mm/yyyy, --:--"
+                onFocus={() => setDateInputType('datetime-local')}
+                onBlur={(e) => {
+                  if (!e.target.value) {
+                    setDateInputType('text');
+                  }
+                }}
+              />
 
               <label className="text-sm font-medium">Message (optional)</label>
               <textarea aria-label="message" name="message" value={volunteerForm.message} onChange={(e) => setVolunteerForm((p:any)=>({...p, message: e.target.value}))} placeholder="Any notes for the hospital (optional)" className="border p-2 rounded" />
@@ -684,6 +741,18 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
             </div>
+            {/* Show small indicator when browser geolocation is used for donors */}
+            {userRole === 'donor' && browserLat != null && browserLng != null && (
+              <div className="mt-2 flex items-center space-x-2">
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Showing nearby requests</span>
+                <button
+                  onClick={() => fetchDonationRequests()}
+                  className="text-sm text-gray-600 underline hover:text-gray-800"
+                >
+                  Refresh
+                </button>
+              </div>
+            )}
           </div>
 
           {userRole !== 'donor' && (
@@ -777,6 +846,9 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
                   <div className="flex items-center space-x-6 text-sm text-gray-600">
                     <span>Location: {request.location}</span>
+                    {typeof (request as any).distanceMeters === 'number' && (
+                      <span>Distance: {(((request as any).distanceMeters || 0) / 1000).toFixed(1)} km</span>
+                    )}
                     {(
                       // show approved badge if backend says approved OR if request is closed/completed
                       (('approved' in request) && ((request as any).approved)) || (request.status || '').toLowerCase() === 'closed' || (request.status || '').toLowerCase() === 'completed' || (request.status || '').toLowerCase() === 'approved'
@@ -817,8 +889,10 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                   {userRole === 'donor' && (
                     hasUserVolunteered(request) ? (
                       <button disabled className="bg-gray-400 text-white px-3 py-2 rounded-lg text-sm">Already volunteered</button>
+                    ) : isUserRequestCreator(request) ? (
+                      <button disabled className="bg-gray-400 text-white px-3 py-2 rounded-lg text-sm">Cannot volunteer for own request</button>
                     ) : (
-                      <button onClick={() => handleVolunteer((request as any)._id || request.requestId)} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm">
+                      <button onClick={() => handleVolunteer((request as any)._id || request.requestId, request.requiredDate)} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm">
                         Volunteer
                       </button>
                     )

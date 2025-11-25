@@ -46,7 +46,6 @@ const registerUser = async (req, res) => {
     const newUser = User({
         firstName: req.body.firstName,
         lastName: req.body.lastName,
-        userName: req.body.userName,
         email: req.body.email,
         password: CryptoJs.AES.encrypt(
             req.body.password,
@@ -115,8 +114,7 @@ const registerUser = async (req, res) => {
                 } catch (e) {
                     // ignore profile lookup errors
                 }
-                // Include admin contact from env if provided
-                info.adminEmail = process.env.ADMIN_EMAIL || 'admin@yourdomain.com';
+                // Removed adminEmail field from response per requirement
                 console.log("Registered user info:", info);
                 console.log("env email:", process.env.ADMIN_EMAIL);
                 res.status(200).json({ user: info, accessToken });
@@ -162,8 +160,7 @@ const loginUser = async (req, res) => {
             { expiresIn: "5d" }
         );
         info.userRole = role.userRole;
-        // attach admin email so frontend can render contact link
-        info.adminEmail = process.env.ADMIN_EMAIL || 'admin@yourdomain.com';
+        // Removed adminEmail field from response per requirement
         // respond with consistent shape: { user, accessToken }
         res.status(200).json({ user: info, accessToken });
     } catch (error) {

@@ -34,6 +34,9 @@ export default function RegisterUser({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [pendingRegistration, setPendingRegistration] = useState<any>(null);
   const [loginData, setLoginData] = useState<LoginData>({ email: '', password: '' });
   const [registerData, setRegisterData] = useState<RegisterData>({
     firstName: '',
@@ -75,6 +78,7 @@ export default function RegisterUser({
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (registerData.password !== registerData.confirmPassword) {
       alert('Passwords do not match');
       return;
@@ -123,12 +127,23 @@ export default function RegisterUser({
       bloodGroup: registerData.bloodType,
       height: registerData.height,
       weight: registerData.weight,
-      dateofBirth: registerData.dateOfBirth,
-      // create a simple username if backend expects one
-      userName: `${registerData.firstName || ''}${registerData.lastName || ''}`.toLowerCase()
+      dateofBirth: registerData.dateOfBirth
     };
+    
+    // Store payload and show confirmation modal
+    setPendingRegistration(payload);
+    setShowConfirmModal(true);
+  };
+
+  const confirmRegistration = async () => {
+    if (!pendingRegistration) return;
+    
+    setShowConfirmModal(false);
+    
     try {
-      await onRegister?.(payload);
+      await onRegister?.(pendingRegistration);
+      // Show success modal
+      setShowSuccessModal(true);
     } catch (err: any) {
       const data = err?.response?.data;
       if (err?.response?.status === 409 && data?.fields) {
@@ -139,6 +154,8 @@ export default function RegisterUser({
       // fallback
       setEmailError('');
       setPhoneError('');
+    } finally {
+      setPendingRegistration(null);
     }
   };
 
@@ -422,6 +439,54 @@ export default function RegisterUser({
           </p>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">Confirm Registration</h2>
+            <p className="text-gray-600 mb-6">Are you sure you want to register with the provided information?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setPendingRegistration(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRegistration}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4 text-green-600">Registration Successful!</h2>
+            <p className="text-gray-600 mb-6">Successfully registered! Please login with your credentials.</p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setShowRegister(false);
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Go to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

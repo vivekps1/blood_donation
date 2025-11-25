@@ -51,5 +51,7 @@ HospitalSchema.pre('save', function(next) {
 
 // 2dsphere index for geospatial queries on hospital locations
 HospitalSchema.index({ hospitalLocationGeo: '2dsphere' });
+// also create index for legacy `locationGeo` field so older docs/queries work
+HospitalSchema.index({ locationGeo: '2dsphere' });
 
 module.exports = mongoose.model("Hospital", HospitalSchema);

@@ -35,18 +35,21 @@ export const HospitalManagement: React.FC = () => {
   const [sortModalOpen, setSortModalOpen] = useState(false);
   const [sortTempField, setSortTempField] = useState(sortField);
   const [sortTempOrder, setSortTempOrder] = useState(sortOrder);
+  const [verificationFilter, setVerificationFilter] = useState<'all' | 'verified' | 'unverified'>('all');
   const [originalHospitalData, setOriginalHospitalData] = useState<Partial<Hospital>>({});
 
   useEffect(() => {
     const fetchHospitals = async () => {
       setLoading(true);
       try {
+        const isVerifiedParam = verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
         const res: any = await getAllHospitals(
           currentPage,
           pageSize,
           sortField || undefined,
           sortOrder || undefined,
-          searchTerm
+          searchTerm,
+          isVerifiedParam
         );
         // Handle both response formats: {hospitals: [], totalPages: x} or direct array
         if (res.data.hospitals) {
@@ -67,7 +70,7 @@ export const HospitalManagement: React.FC = () => {
       setLoading(false);
     };
     fetchHospitals();
-  }, [currentPage, pageSize, sortField, sortOrder, searchTerm]);
+  }, [currentPage, pageSize, sortField, sortOrder, searchTerm, verificationFilter]);
 
     // Google Places will be used as the primary location input
 
@@ -75,6 +78,7 @@ export const HospitalManagement: React.FC = () => {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editData, setEditData] = useState<Partial<Hospital>>({});
+
   const [emailError, setEmailError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
   const addPlaceRef = useRef<HTMLInputElement | null>(null);
@@ -170,7 +174,8 @@ export const HospitalManagement: React.FC = () => {
         await createHospital(payload);
         // Refresh the hospital list after adding
         setCurrentPage(1);
-        const res: any = await getAllHospitals(1, pageSize, sortField || undefined, sortOrder || undefined, searchTerm);
+        const isVerifiedParam = verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+        const res: any = await getAllHospitals(1, pageSize, sortField || undefined, sortOrder || undefined, searchTerm, isVerifiedParam);
         if (res.data.hospitals) {
           setHospitals(res.data.hospitals);
           setTotalPages(res.data.totalPages || 1);
@@ -197,7 +202,8 @@ export const HospitalManagement: React.FC = () => {
         if (prefixed) payload.phoneNumber = prefixed;
         await updateHospital(isEditing, payload as Hospital);
         // Refresh the hospital list after updating
-        const res: any = await getAllHospitals(currentPage, pageSize, sortField || undefined, sortOrder || undefined, searchTerm);
+        const isVerifiedParam = verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+        const res: any = await getAllHospitals(currentPage, pageSize, sortField || undefined, sortOrder || undefined, searchTerm, isVerifiedParam);
         if (res.data.hospitals) {
           setHospitals(res.data.hospitals);
           setTotalPages(res.data.totalPages || 1);
@@ -230,7 +236,8 @@ export const HospitalManagement: React.FC = () => {
       try {
         await deleteHospital(id);
         // Refresh the hospital list after deleting
-        const res: any = await getAllHospitals(currentPage, pageSize, sortField || undefined, sortOrder || undefined, searchTerm);
+        const isVerifiedParam = verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+        const res: any = await getAllHospitals(currentPage, pageSize, sortField || undefined, sortOrder || undefined, searchTerm, isVerifiedParam);
         if (res.data.hospitals) {
           setHospitals(res.data.hospitals);
           setTotalPages(res.data.totalPages || 1);
@@ -313,6 +320,20 @@ export const HospitalManagement: React.FC = () => {
             >
               Clear Search
             </button>
+
+            {/* Verification Filter */}
+            <select
+              className="px-4 py-2 border rounded bg-white hover:bg-gray-50"
+              value={verificationFilter}
+              onChange={(e) => {
+                setVerificationFilter(e.target.value as 'all' | 'verified' | 'unverified');
+                setCurrentPage(1);
+              }}
+            >
+              <option value="all">All Hospitals</option>
+              <option value="verified">Verified Only</option>
+              <option value="unverified">Unverified Only</option>
+            </select>
 
             {/* Sort Button */}
             <div className="relative flex items-center gap-2">
@@ -576,7 +597,7 @@ export const HospitalManagement: React.FC = () => {
                       <Mail className="w-4 h-4 text-gray-400" />
                       <span className="font-medium">{hospital.email}</span>
                     </div>
-                    <div className="font-semibold text-green-700 ml-auto">
+                    <div className={`font-semibold ml-auto ${hospital.isVerified ? 'text-green-700' : 'text-red-700'}`}>
                       Verified: <span className="font-bold">{hospital.isVerified ? 'Yes' : 'No'}</span>
                     </div>
                   </div>
@@ -616,7 +637,7 @@ export const HospitalManagement: React.FC = () => {
                         if (!digits) { setPhoneError(''); return; }
                         setPhoneError(isValidPhone(digits) ? '' : 'Enter a valid 10-digit phone number');
                       }}
-                      className={`flex-1 px-3 py-3 border border-l-0 rounded-r-lg focus:ring-2 focus:ring-blue-500 ${phoneError ? 'border-red-500' : ''}`}
+                      className={`flex-1 px-3 py-3 border border-l-0 rounded-r-lg focus:ring-2 focus:ring-blue-500  ${phoneError ? 'border-red-500' : ''}`}
                     />
                   </div>
                   {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}

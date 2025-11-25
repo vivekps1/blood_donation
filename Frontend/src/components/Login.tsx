@@ -27,6 +27,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister,
     try {
       await onLogin({ email: credentials.username, role: credentials.role, password: credentials.password });
     } catch (err: any) {
+      console.log('Login error caught:', err);
+      console.log('Error response:', err?.response);
+      console.log('Error response data:', err?.response?.data);
       let msg = 'Login failed';
       if (err && err.response && err.response.data) {
         if (err.response.data.msg) {
@@ -35,6 +38,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister,
           msg = typeof err.response.data === 'string' ? err.response.data : err.response.data.error || 'Login failed';
         }
       }
+      console.log('Final error message:', msg);
       setErrorMsg(msg);
       setShowErrorPopup(true);
       setLoadingError(true);
@@ -105,7 +109,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister,
             <div>
               <input
                 type="text"
-                placeholder="Username"
+                placeholder="Email"
                 value={credentials.username}
                 onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
