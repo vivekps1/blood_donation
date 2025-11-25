@@ -14,7 +14,23 @@ export const uploadProfilePhoto = (userId: string | number, file: File) => {
 };
 export const createUserProfile = (profileData: any) => api.post('/user-profile', profileData);
 // Hospital Management APIs
-export const getAllHospitals = () => api.get('/hospitals');
+export const getAllHospitals = (
+  page = 1,
+  size = 10,
+  sortField?: string,
+  sortOrder?: string,
+  search?: string,
+  isVerified?: boolean
+) => {
+  const params = new URLSearchParams();
+  params.append('page', String(page));
+  params.append('size', String(size));
+  if (sortField) params.append('sortField', sortField);
+  if (sortOrder) params.append('sortOrder', sortOrder);
+  if (search) params.append('search', search);
+  if (typeof isVerified === 'boolean') params.append('isVerified', String(isVerified));
+  return api.get(`/hospitals?${params.toString()}`);
+};
 export const createHospital = (hospitalData: any) => api.post('/hospitals', hospitalData);
 export const updateHospital = (id: string, hospitalData: any) => api.put(`/hospitals/${id}`, hospitalData);
 export const deleteHospital = (id: string) => api.delete(`/hospitals/${id}`);
@@ -42,6 +58,17 @@ api.interceptors.request.use(config => {
   }
   return config;
 });
+
+// Add a response interceptor to handle errors
+api.interceptors.response.use(
+  response => response,
+  error => {
+    console.log('Axios interceptor error:', error);
+    console.log('Axios error response:', error.response);
+    // Re-throw the error so it can be caught by the caller
+    return Promise.reject(error);
+  }
+);
 
 
 

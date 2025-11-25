@@ -342,6 +342,11 @@ exports.volunteerForDonation = async (req, res) => {
             return res.status(404).json({ message: "Donation request not found" });
         }
 
+        // Prevent the user who created the request from volunteering for it
+        if (donationRequest.requestedBy && donorId && String(donationRequest.requestedBy) === String(donorId)) {
+            return res.status(403).json({ message: "You cannot volunteer for a donation request you created" });
+        }
+
         // Only allow volunteering for approved requests
         if (!donationRequest.approved && String(donationRequest.status).toUpperCase() !== 'APPROVED') {
             return res.status(400).json({ message: "Donation request is not approved for volunteers" });

@@ -9,6 +9,7 @@ interface DonationManagementProps {
 
 const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   const [donors, setDonors] = useState<Donor[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [sortField, setSortField] = useState<'name' | 'bloodGroup' | ''>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [appliedFilters, setAppliedFilters] = useState({ bloodType: 'all', eligibility: 'all', search: '' });
@@ -30,10 +31,12 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
 
   const openDonorModal = (donor: Donor) => {
     setSelectedDonor(donor);
+    const rawLast = donor.name ? donor.name.split(' ').slice(1).join(' ') : '';
+    const cleanedLast = rawLast && !/^(undefined|null)$/i.test(rawLast) ? rawLast : '';
     setDonorForm({
-      // split name into first/last for editing
+      // split name into first/last for editing; drop placeholder tokens
       firstName: donor.name ? donor.name.split(' ')[0] : '',
-      lastName: donor.name ? donor.name.split(' ').slice(1).join(' ') : '',
+      lastName: cleanedLast,
       email: donor.email,
       phoneNumber: donor.phoneNumber ? String(donor.phoneNumber).replace(/\D/g, '').slice(-10) : '',
       bloodGroup: donor.bloodGroup,
@@ -41,7 +44,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       weight: donor.weight,
       address: donor.address || '',
       diseases: donor.diseases || '',
-      dateofBirth: (donor as any).dateofBirth || '',
+      // ensure proper format for <input type="date"> (YYYY-MM-DD)
+      dateofBirth: (donor as any).dateofBirth ? new Date((donor as any).dateofBirth).toISOString().slice(0,10) : '',
       eligibility: donor.eligibility || '',
     });
     setModalErrors({});
@@ -64,7 +68,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       // validate modal fields (firstName, email, phone, bloodGroup, dob)
       const errors: Record<string, string> = {};
       const firstName = (donorForm.firstName || '').trim();
-      const lastName = (donorForm.lastName || '').trim();
+      let lastName = (donorForm.lastName || '').trim();
+      if (/^(undefined|null)$/i.test(lastName)) lastName = '';
       const email = (donorForm.email || '').trim();
       const phoneRaw = String(donorForm.phoneNumber || '').replace(/\D/g, '');
       const bloodGroup = (donorForm.bloodGroup || '').trim();
@@ -91,7 +96,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       }
 
       const payload: any = {
-        name: `${firstName}${lastName ? ' ' + lastName : ''}`,
+        name: `${firstName}${lastName ? ' ' + lastName : ''}`.trim(),
         email,
         // save phoneNumber with +91 prefix
         phoneNumber: `+91${phoneRaw}`,
@@ -105,10 +110,17 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       if (dob) payload.dateofBirth = dob;
       Object.keys(payload).forEach(k => (payload[k] === undefined || payload[k] === '') && delete payload[k]);
       const resp = await updateDonor(selectedDonor._id, payload);
-  const updated: Partial<Donor> = resp.data as any;
-  setDonors(prev => prev.map(d => d._id === selectedDonor._id ? { ...d, ...(updated as Partial<Donor>) } : d));
+      const updated: Partial<Donor> = resp.data as any;
+      setDonors(prev => prev.map(d => d._id === selectedDonor._id ? { ...d, ...(updated as Partial<Donor>) } : d));
       closeDonorModal();
-    } catch (e) {
+    } catch (e: any) {
+      const data = e?.response?.data;
+      if (e?.response?.status === 409 && data?.fields) {
+        const newErrors: Record<string, string> = {};
+        if (data.fields.email) newErrors.email = 'Email already exists';
+        if (data.fields.phoneNumber) newErrors.phoneNumber = 'Phone number already exists';
+        setModalErrors(prev => ({ ...prev, ...newErrors }));
+      }
       setSaving(false);
     }
   };
@@ -116,6 +128,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   useEffect(() => {
     const fetchDonors = async () => {
       try {
+        setLoading(true);
         // Pass page, size, sort and filters to backend
         const response = await getAllDonors(
           currentPage,
@@ -131,6 +144,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         setTotalPages(data.totalPages || 1);
       } catch {
         setDonors([]);
+      } finally {
+        setLoading(false);
       }
     };
     fetchDonors();
@@ -355,26 +370,63 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
     </div>
 
     {/* Donors Grid */}
-    <div className="grid gap-6">
+    {loading ? (
+      <div className="grid gap-6">
+        {[1,2,3].map(i => (
+          <div key={i} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 animate-pulse">
+            <div className="flex items-start space-x-4 mb-4">
+              <div className="w-16 h-16 bg-gray-200 rounded-full" />
+              <div className="flex-1">
+                <div className="h-5 w-40 bg-gray-200 rounded mb-2" />
+                <div className="h-4 w-24 bg-gray-200 rounded" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="h-4 bg-gray-200 rounded" />
+              <div className="h-4 bg-gray-200 rounded" />
+              <div className="h-4 bg-gray-200 rounded" />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="grid gap-6">
       {paginatedDonors.length === 0 ? (
-        <div className="text-center text-gray-500 py-8">No donors found for selected filters.</div>
+        <div className="text-center text-gray-500 py-8">
+          {(() => {
+            const filtersActive = appliedFilters.search.trim() !== '' || appliedFilters.bloodType !== 'all' || appliedFilters.eligibility !== 'all';
+            if (donorStats && typeof donorStats.totalDonors === 'number') {
+              return donorStats.totalDonors > 0
+                ? (filtersActive ? 'No donors found based on the filter.' : 'No donor data found.')
+                : 'No donor data found.';
+            }
+            return filtersActive ? 'No donors found based on the filter.' : 'No donor data found.';
+          })()}
+        </div>
       ) : (
         paginatedDonors.map((donor) => {
           const totalDonations = donor.totalDonations ?? '-';
           const lastDonationDate = donor.lastDonationDate ? new Date(donor.lastDonationDate).toLocaleDateString() : 'N/A';
-          const lastStatus = donor.lastStatus ?? 'N/A';
           const eligibility = { status: donor.eligibility ?? 'N/A', message: donor.eligibility ?? 'N/A' };
+          const displayName = donor.name ? donor.name.replace(/\b(undefined|null)\b/gi, '').trim().replace(/\s+/g,' ') || '-' : '-';
           return (
             <div key={donor._id} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-4 flex-1">
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    {donor.name ? donor.name[0] : ''}
+                    {displayName && displayName !== '-' ? displayName[0] : ''}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <h3 className="text-xl font-semibold text-gray-900">
-                        {donor.name}
+                        {displayName}
                       </h3>
                       <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
                         {donor.bloodGroup}
@@ -396,7 +448,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                       </div>
                       <div className="flex items-center space-x-2 text-gray-600">
                         <MapPin className="w-4 h-4" />
-                        <span className="text-sm">{donor.address}</span>
+                        <span className="text-sm">{donor.address || '-'}</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
@@ -435,12 +487,13 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         })
       )}
     </div>
+    )}
 
     {selectedDonor && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative max-h-[90vh] overflow-y-auto">
+        <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative">
           <div className="flex items-center justify-between border-b px-6 py-4">
-            <h2 className="text-lg font-semibold">Edit Donor - {selectedDonor.name}</h2>
+            <h2 className="text-lg font-semibold">Edit Donor - {selectedDonor.name ? selectedDonor.name.replace(/\b(undefined|null)\b/gi,'').trim().replace(/\s+/g,' ') || '-' : '-'}</h2>
             <button onClick={closeDonorModal} className="text-gray-500 hover:text-gray-700">
               <X className="w-5 h-5" />
             </button>
@@ -476,11 +529,15 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700">Phone Number</label>
-                <input
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  value={donorForm.phoneNumber || ''}
-                  onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0,10); handleDonorChange('phoneNumber', digits); setModalErrors(prev => ({ ...prev, phoneNumber: '' })); }}
-                />
+                <div className="mt-1 flex w-full">
+                  <span className="px-3 py-2 border rounded-l bg-gray-100 text-sm text-gray-700 select-none">+91</span>
+                  <input
+                    className="flex-1 border border-l-0 rounded-r px-3 py-2"
+                    placeholder="10-digit number"
+                    value={donorForm.phoneNumber || ''}
+                    onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0,10); handleDonorChange('phoneNumber', digits); setModalErrors(prev => ({ ...prev, phoneNumber: '' })); }}
+                  />
+                </div>
                 {modalErrors.phoneNumber && <div className="text-sm text-red-600 mt-2">{modalErrors.phoneNumber}</div>}
               </div>
               <div>
@@ -574,28 +631,30 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       </div>
     )}
 
-    {/* Pagination Controls (arrow buttons, no 'Page' text) */}
-    <div className="flex justify-center items-center mt-6 gap-4">
-      <button
-        className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
-        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-        disabled={currentPage === 1}
-        aria-label="Previous page"
-      >
-        <ChevronLeft className="w-5 h-5" />
-      </button>
+    {/* Pagination Controls (shown only when there is data and multiple pages) */}
+    {!loading && paginatedDonors.length > 0 && totalPages > 1 && (
+      <div className="flex justify-center items-center mt-6 gap-4">
+        <button
+          className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
+          onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+          disabled={currentPage === 1}
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
 
-      <span className="mx-2 font-medium">{currentPage} of {totalPages}</span>
+        <span className="mx-2 font-medium">{currentPage} of {totalPages}</span>
 
-      <button
-        className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
-        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-        disabled={currentPage === totalPages}
-        aria-label="Next page"
-      >
-        <ChevronRight className="w-5 h-5" />
-      </button>
-    </div>
+        <button
+          className="px-3 py-2 bg-gray-100 rounded disabled:opacity-50 flex items-center"
+          onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+          disabled={currentPage === totalPages}
+          aria-label="Next page"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+    )}
   </div>
   );
 }

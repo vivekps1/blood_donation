@@ -35,6 +35,10 @@ export default function RegisterUser({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [pendingRegistration, setPendingRegistration] = useState<any>(null);
+  const [loginData, setLoginData] = useState<LoginData>({ email: '', password: '' });
   const [registerData, setRegisterData] = useState<RegisterData>({
     firstName: '',
     lastName: '',
@@ -76,8 +80,9 @@ export default function RegisterUser({
 
   // Login not used in this modal/flow; leaving registration only
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (registerData.password !== registerData.confirmPassword) {
       alert('Passwords do not match');
       return;
@@ -131,12 +136,36 @@ export default function RegisterUser({
       bloodGroup: registerData.bloodType,
       height: registerData.height,
       weight: registerData.weight,
-      dateofBirth: registerData.dateOfBirth,
-      // create a simple username if backend expects one
-      userName: `${registerData.firstName || ''}${registerData.lastName || ''}`.toLowerCase()
+      dateofBirth: registerData.dateOfBirth
     };
-    console.log('Register payload:', payload);
-    onRegister && onRegister(payload);
+    
+    // Store payload and show confirmation modal
+    setPendingRegistration(payload);
+    setShowConfirmModal(true);
+  };
+
+  const confirmRegistration = async () => {
+    if (!pendingRegistration) return;
+    
+    setShowConfirmModal(false);
+    
+    try {
+      await onRegister?.(pendingRegistration);
+      // Show success modal
+      setShowSuccessModal(true);
+    } catch (err: any) {
+      const data = err?.response?.data;
+      if (err?.response?.status === 409 && data?.fields) {
+        if (data.fields.email) setEmailError('Email already exists');
+        if (data.fields.phoneNumber) setPhoneError('Phone number already exists');
+        return;
+      }
+      // fallback
+      setEmailError('');
+      setPhoneError('');
+    } finally {
+      setPendingRegistration(null);
+    }
   };
 
   // Live validation when user types
@@ -240,17 +269,21 @@ export default function RegisterUser({
 
             <div>
               <div>
-                <div className="relative h-12">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="tel"
-                    placeholder="Phone Number *"
-                    value={registerData.phone}
-                    onChange={(e) => onPhoneChange(e.target.value)}
-                    className="w-full pl-10 pr-4 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    autoComplete="tel"
-                    required
-                  />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-red-600">*</span></label>
+                <div className="flex w-full h-12">
+                  <span className="px-3 py-3 border rounded-l-lg bg-gray-100 text-sm text-gray-700 select-none">+91</span>
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="tel"
+                      placeholder="10-digit number"
+                      value={registerData.phone}
+                      onChange={(e) => onPhoneChange(e.target.value)}
+                      className="w-full pl-10 pr-4 h-12 border border-l-0 border-gray-300 rounded-r-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      autoComplete="tel"
+                      required
+                    />
+                  </div>
                 </div>
                 {phoneError && <div className="text-sm text-red-600 mt-2">{phoneError}</div>}
               </div>
@@ -413,6 +446,54 @@ export default function RegisterUser({
           </p>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4">Confirm Registration</h2>
+            <p className="text-gray-600 mb-6">Are you sure you want to register with the provided information?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setPendingRegistration(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRegistration}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4 text-green-600">Registration Successful!</h2>
+            <p className="text-gray-600 mb-6">Successfully registered! Please login with your credentials.</p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setShowRegister(false);
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Go to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

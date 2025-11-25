@@ -1,5 +1,5 @@
 import  React from 'react';
-import { Menu, Bell, User, LogOut } from 'lucide-react';
+import { Menu, User, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -25,16 +25,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user, onLogout, onProfileC
           <Menu className="w-5 h-5" />
         </button>
         <h1 className="text-xl font-semibold text-gray-900 capitalize">
-          Welcome, {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username}
+          Welcome, {user.firstName ? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}` : user.email}
         </h1>
       </div>
 
       <div className="flex items-center space-x-4">
-        <button className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 relative">
-          <Bell className="w-5 h-5" />
-          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
-        </button>
-        
         <div className="flex items-center space-x-3">
           <div
             className="flex items-center space-x-3 cursor-pointer group"
@@ -45,7 +40,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, user, onLogout, onProfileC
               <User className="w-5 h-5 text-gray-600" />
             </div>
             <div className="hidden md:block">
-              <div className="text-sm font-medium text-gray-900 group-hover:underline">{user.username}</div>
+              <div className="text-sm font-medium text-gray-900 group-hover:underline">{user.email}</div>
               <div className="text-xs text-gray-500 capitalize">{user.role}</div>
             </div>
           </div>

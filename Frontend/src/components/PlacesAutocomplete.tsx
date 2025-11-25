@@ -6,7 +6,7 @@ const PlacesAutocomplete = React.memo(function PlacesAutocomplete({ value, onSel
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
 
   useEffect(() => {
-    const key = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY|| 'AIzaSyABYfFKVAO6tmZym_WIlUkn1ooMp3Ymg7g';
+    const key = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY|| 'undefined';
     if (!key) return;
 
     const loadScript = () => {
