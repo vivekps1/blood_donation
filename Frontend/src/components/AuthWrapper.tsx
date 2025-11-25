@@ -30,8 +30,12 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onLogin, onRegister, setCurre
       ) : (
         <Login
           onLogin={async (credentials) => {
-            const success = await onLogin(credentials);
-            if (success) setCurrentPage('dashboard');
+            try {
+              const success = await onLogin(credentials);
+              if (success) setCurrentPage('dashboard');
+            } catch (err: any) {
+              throw err; // rethrow so Login component can handle error display
+            }
           }}
           setCurrentPage={setCurrentPage}
           setShowRegister={setShowRegister}

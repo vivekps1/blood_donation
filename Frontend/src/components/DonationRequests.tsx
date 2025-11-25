@@ -55,6 +55,16 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
     location: '',
   });
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage] = useState<number>(10);
+  
+  // Sorting state
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  
+  // Hospital filter state
+  const [hospitalFilter, setHospitalFilter] = useState<string>('all');
+
   
   const [volunteerModalOpen, setVolunteerModalOpen] = useState<boolean>(false);
   const [volunteerForm, setVolunteerForm] = useState<any>({ expectedDonationTime: '', contact: '', message: '' });
@@ -201,13 +211,17 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
+    setCurrentPage(1); // Reset to first page on search
   };
 
   const filteredAndSearchedRequests = requests.filter((request) => {
     const reqStatus = (request.status || '').toString().toLowerCase();
     const matchesStatus = statusFilter === 'all' || reqStatus === statusFilter;
-    // For donor users, allow approved or closed requests. Also allow the
-    // requesting user to see their own pending requests (requestedBy === currentUser id).
+    
+    // Hospital filter
+    const matchesHospital = hospitalFilter === 'all' || (request as any).hospitalId === hospitalFilter;
+    
+    // For donor users, only allow approved requests. Treat closed/completed as approved on the frontend
     if (userRole === 'donor') {
       const isApprovedBackend = ('approved' in request) ? Boolean((request as any).approved) : reqStatus === 'approved';
       const isClosed = reqStatus === 'closed';
@@ -228,8 +242,26 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
       request.patientName?.toLowerCase().includes(lower) ||
       request.bloodGroup?.toLowerCase().includes(lower) ||
       (request.location || '').toLowerCase().includes(lower);
-    return matchesStatus && matchesSearch;
+    return matchesStatus && matchesSearch && matchesHospital;
   });
+
+  // Sort by creation date
+  const sortedRequests = [...filteredAndSearchedRequests].sort((a, b) => {
+    const dateA = new Date((a as any).createdAt || a.requestDate).getTime();
+    const dateB = new Date((b as any).createdAt || b.requestDate).getTime();
+    return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedRequests.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedRequests = sortedRequests.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const getStatusIcon = (status: string) => {
     const s = (status || '').toLowerCase();
@@ -476,49 +508,53 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
             </button>
             {showModal && (
               <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+                <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] flex flex-col">
                   <h2 className="text-xl font-semibold mb-4">Create Donation Request</h2>
-                  <div className="grid grid-cols-1 gap-3">
-                    <input name="patientName" value={formData.patientName} onChange={handleFormChange} placeholder="Patient Name" className="border p-2 rounded" />
-                    <select name="bloodGroup" value={formData.bloodGroup} onChange={handleFormChange} className="border p-2 rounded">
-                      <option value="">Select blood group</option>
-                      <option value="A+">A+</option>
-                      <option value="A-">A-</option>
-                      <option value="B+">B+</option>
-                      <option value="B-">B-</option>
-                      <option value="AB+">AB+</option>
-                      <option value="AB-">AB-</option>
-                      <option value="O+">O+</option>
-                      <option value="O-">O-</option>
-                    </select>
-                    <input name="bloodUnitsCount" type="number" value={formData.bloodUnitsCount} onChange={handleFormChange} placeholder="Units Required" className="border p-2 rounded" />
-                    <input name="medicalCondition" value={formData.medicalCondition} onChange={handleFormChange} placeholder="Medical Condition" className="border p-2 rounded" />
-                    <select name="priority" value={formData.priority} onChange={handleFormChange} className="border p-2 rounded">
-                      <option value="critical">Critical</option>
-                      <option value="urgent">Urgent</option>
-                      <option value="normal">Normal</option>
-                    </select>
-                    <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
-                    {/* Hospital selection button */}
-                    <div
-                      className="border p-2 rounded bg-white cursor-pointer"
-                      onClick={() => setHospitalDropdownOpen(true)}
-                    >
-                      {formData.hospitalId ? (
-                        <div>
-                          <div className="font-medium">
-                            {hospitals.find(h => h._id === formData.hospitalId)?.hospitalName}
-                          </div>
-                          <div className="text-xs text-gray-500 truncate">
-                            {hospitals.find(h => h._id === formData.hospitalId)?.address}
-                          </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="grid grid-cols-1 gap-3">
+                      <input name="patientName" value={formData.patientName} onChange={handleFormChange} placeholder="Patient Name" className="border p-2 rounded" />
+                      <select name="bloodGroup" value={formData.bloodGroup} onChange={handleFormChange} className="border p-2 rounded">
+                        <option value="">Select blood group</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                      <input name="bloodUnitsCount" type="number" value={formData.bloodUnitsCount} onChange={handleFormChange} placeholder="Units Required" className="border p-2 rounded" />
+                      <input name="medicalCondition" value={formData.medicalCondition} onChange={handleFormChange} placeholder="Medical Condition" className="border p-2 rounded" />
+                      <select name="priority" value={formData.priority} onChange={handleFormChange} className="border p-2 rounded">
+                        <option value="critical">Critical</option>
+                        <option value="urgent">Urgent</option>
+                        <option value="normal">Normal</option>
+                      </select>
+                      <input name="requiredDate" type="date" value={formData.requiredDate} onChange={handleFormChange} className="border p-2 rounded" />
+                      {/* Custom hospital dropdown */}
+                      <div className="relative">
+                        <div
+                          className="border p-2 rounded bg-white cursor-pointer w-full hover:border-blue-500 transition-colors"
+                          onClick={() => setHospitalDropdownOpen(!hospitalDropdownOpen)}
+                        >
+                          {formData.hospitalId ? (
+                            <div>
+                              <div className="font-medium">
+                                {hospitals.find(h => h._id === formData.hospitalId)?.hospitalName}
+                              </div>
+                              <div className="text-xs text-gray-500 truncate">
+                                {hospitals.find(h => h._id === formData.hospitalId)?.address}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-500">Select hospital</span>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-gray-500">Select hospital</span>
-                      )}
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-4 flex justify-end space-x-2">
+                  <div className="mt-4 flex justify-end space-x-2 flex-shrink-0">
                     <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded border">Cancel</button>
                     <button onClick={submitNewRequest} className="px-4 py-2 rounded bg-red-600 text-white">Submit</button>
                   </div>
@@ -526,25 +562,40 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
               </div>
             )}
 
-            {/* Hospital selection overlay popup */}
+            {/* Hospital Selection Popup - Separate from modal */}
             {hospitalDropdownOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{ zIndex: 9999 }}>
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-                  <div className="p-4 border-b">
+              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center" style={{ zIndex: 9999 }}>
+                <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                  {/* Header */}
+                  <div className="p-4 border-b flex items-center justify-between">
                     <h3 className="text-lg font-semibold">Select Hospital</h3>
+                    <button
+                      onClick={() => {
+                        setHospitalDropdownOpen(false);
+                        setHospitalSearchTerm('');
+                      }}
+                      className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                    >
+                      &times;
+                    </button>
                   </div>
+
+                  {/* Search bar */}
                   <div className="p-4 border-b">
                     <input
                       type="text"
-                      placeholder="Search hospitals..."
+                      placeholder="Search hospitals by name, address, or pincode..."
                       value={hospitalSearchTerm}
                       onChange={(e) => setHospitalSearchTerm(e.target.value)}
-                      className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
                     />
                   </div>
-                  <div className="overflow-y-auto flex-1 p-4">
+
+                  {/* Hospital list */}
+                  <div className="flex-1 overflow-y-auto p-2">
                     <div
-                      className="p-3 hover:bg-gray-100 cursor-pointer rounded mb-2"
+                      className="p-3 hover:bg-blue-50 cursor-pointer rounded-lg transition-colors mb-1"
                       onClick={() => {
                         setFormData((prev: any) => ({
                           ...prev,
@@ -555,7 +606,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                         setHospitalSearchTerm('');
                       }}
                     >
-                      <span className="text-gray-500">None (Clear selection)</span>
+                      <span className="text-gray-500 italic">No hospital selected</span>
                     </div>
                     {hospitals
                       .filter((h) => {
@@ -570,7 +621,9 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                       .map((h) => (
                         <div
                           key={h._id}
-                          className="p-3 hover:bg-blue-50 cursor-pointer border rounded mb-2"
+                          className={`p-3 hover:bg-blue-50 cursor-pointer rounded-lg border transition-colors mb-1 ${
+                            formData.hospitalId === h._id ? 'bg-blue-100 border-blue-300' : 'border-gray-200'
+                          }`}
                           onClick={() => {
                             setFormData((prev: any) => ({
                               ...prev,
@@ -581,28 +634,30 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
                             setHospitalSearchTerm('');
                           }}
                         >
-                          <div className="font-medium">{h.hospitalName}</div>
-                          <div className="text-sm text-gray-600">{h.address}</div>
-                          {h.pincode && <div className="text-xs text-gray-500">Pincode: {h.pincode}</div>}
+                          <div className="font-medium text-gray-900">{h.hospitalName}</div>
+                          <div className="text-sm text-gray-600 mt-1">{h.address}</div>
+                          {h.pincode && (
+                            <div className="text-xs text-gray-500 mt-1">Pincode: {h.pincode}</div>
+                          )}
                         </div>
                       ))}
-                  </div>
-                  <div className="p-4 border-t flex justify-end">
-                    <button
-                      onClick={() => {
-                        setHospitalDropdownOpen(false);
-                        setHospitalSearchTerm('');
-                      }}
-                      className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                    >
-                      Close
-                    </button>
+                    {hospitals.filter((h) => {
+                      if (!hospitalSearchTerm) return true;
+                      const searchLower = hospitalSearchTerm.toLowerCase();
+                      return (
+                        h.hospitalName?.toLowerCase().includes(searchLower) ||
+                        h.address?.toLowerCase().includes(searchLower) ||
+                        h.pincode?.toLowerCase().includes(searchLower)
+                      );
+                    }).length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        No hospitals found matching your search.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
-            
-          </>
+            )}          </>
         )}
       </div>
       {/* Volunteer confirmation modal for donors */}
@@ -729,17 +784,19 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
 
       {/* Filters */}
       <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search requests..."
-                value={searchTerm}
-                onChange={handleSearch}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search requests..."
+                  value={searchTerm}
+                  onChange={handleSearch}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
             </div>
             {/* Show small indicator when browser geolocation is used for donors */}
             {userRole === 'donor' && browserLat != null && browserLng != null && (
@@ -755,19 +812,35 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
             )}
           </div>
 
-          {userRole !== 'donor' && (
+          {/* Second row with hospital filter and sort */}
+          <div className="flex flex-col md:flex-row gap-4">
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              value={hospitalFilter}
+              onChange={(e) => { setHospitalFilter(e.target.value); setCurrentPage(1); }}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="all">All Hospitals</option>
+              {hospitals.map((hospital) => (
+                <option key={hospital._id} value={hospital._id}>
+                  {hospital.hospitalName}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sortOrder}
+              onChange={(e) => { setSortOrder(e.target.value as 'newest' | 'oldest'); setCurrentPage(1); }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
             >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="completed">Completed</option>
-              <option value="rejected">Rejected</option>
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
             </select>
-          )}
+          </div>
+
+          {/* Results count */}
+          <div className="text-sm text-gray-600">
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedRequests.length)} of {sortedRequests.length} requests
+          </div>
         </div>
       </div>
 
@@ -801,7 +874,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
         </div>
       ) : (
         <div className="grid gap-6">
-          {filteredAndSearchedRequests.length === 0 ? (
+          {paginatedRequests.length === 0 ? (
             <div className="bg-white rounded-lg shadow-sm border p-10 text-center">
               <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
                 <Activity className="w-6 h-6 text-gray-400" />
@@ -810,7 +883,7 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
               <p className="text-gray-600">Try adjusting filters or creating a new request.</p>
             </div>
           ) : (
-          filteredAndSearchedRequests.map((request) => (
+          paginatedRequests.map((request) => (
             <div key={(request as any)._id || request.requestId} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -902,6 +975,55 @@ const DonationRequests: React.FC<DonationRequestsProps> = ({ userRole,currentUse
             </div>
           )))
           }
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && !error && sortedRequests.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          
+          <div className="flex gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+              // Show first page, last page, current page, and pages around current
+              if (
+                page === 1 ||
+                page === totalPages ||
+                (page >= currentPage - 1 && page <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={page}
+                    onClick={() => handlePageChange(page)}
+                    className={`px-4 py-2 rounded-lg ${
+                      currentPage === page
+                        ? 'bg-red-600 text-white'
+                        : 'border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              } else if (page === currentPage - 2 || page === currentPage + 2) {
+                return <span key={page} className="px-2 py-2">...</span>;
+              }
+              return null;
+            })}
+          </div>
+
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
         </div>
       )}
     </div>

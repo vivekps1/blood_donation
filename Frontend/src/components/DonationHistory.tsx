@@ -31,6 +31,10 @@ interface DonationRecord {
   volunteers?: VolunteerEntry[];
   availableDonors?: number;
   hospitalId?: string;
+  hospitalName?: string;
+  hospitalAddress?: string;
+  hospitalPhone?: string;
+  hospitalLocation?: string;
   fulfilledBy?: string;
   fulfilledByName?: string;
   fulfilledAt?: string | Date | null;
@@ -118,7 +122,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
             <button
               onClick={() => {
                 const csv = [
-                  ['Request ID','Date','Units','Priority','Status','Blood Group','Hospital ID','Location'].join(','),
+                  ['Request ID','Date','Units','Priority','Status','Blood Group','Hospital','Location'].join(','),
                   ...filtered.map(r => [
                     r.requestId || r._id,
                     r.requestDate ? new Date(r.requestDate).toISOString().slice(0,10) : (r.requiredDate ? new Date(r.requiredDate).toISOString().slice(0,10) : ''),
@@ -126,7 +130,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
                     r.priority ?? '',
                     r.status ?? '',
                     r.bloodGroup || '',
-                    r.hospitalId || '',
+                    r.hospitalName || r.hospitalId || '',
                     r.location || ''
                   ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
                 ].join('\n');
@@ -256,7 +260,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
                     {r.bloodGroup || '-'}
                   </span>
                 </td>
-                <td className="px-6 py-3 text-sm text-gray-700">{r.hospitalId || '-'}</td>
+                <td className="px-6 py-3 text-sm text-gray-700">{r.hospitalName || '-'}</td>
                 <td className="px-6 py-3 text-sm">{r.priority || '-'}</td>
                 <td className="px-6 py-3 text-sm">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -290,12 +294,17 @@ export default function DonationHistory({  }: DonationHistoryProps) {
       </div>
 
       {selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={closeModal}>
+        <div 
+          className="fixed top-0 left-0 right-0 bottom-0 z-50 flex items-center justify-center bg-black/40" 
+          style={{ margin: 0, padding: 0 }}
+          onClick={closeModal}
+        >
           <div
-            className="bg-white w-full max-w-3xl rounded-lg shadow-xl border border-gray-200 animate-fadeIn"
+            className="bg-white w-full max-w-3xl mx-4 rounded-lg shadow-xl border border-gray-200 animate-fadeIn flex flex-col"
+            style={{ maxHeight: '90vh' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b">
+            <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
               <h3 className="text-xl font-semibold text-gray-800">Donation Details</h3>
               <button
                 onClick={closeModal}
@@ -305,44 +314,47 @@ export default function DonationHistory({  }: DonationHistoryProps) {
                 ✕
               </button>
             </div>
-            <div className="px-6 py-4 space-y-6">
+            <div className="px-6 py-4 space-y-6 overflow-y-auto flex-1">
               <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Request</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Internal ID" value={selectedRecord._id} />
-                  <Detail label="Request ID" value={selectedRecord.requestId || '-'} />
-                  <Detail label="Date" value={selectedRecord.requestDate ? new Date(selectedRecord.requestDate).toLocaleString() : (selectedRecord.requiredDate ? new Date(selectedRecord.requiredDate).toLocaleString() : '-')} />
-                  <Detail label="Units" value={selectedRecord.bloodUnitsCount ?? '-'} />
-                  <Detail label="Medical Condition" value={selectedRecord.medicalCondition || '-'} />
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Request Information</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <Detail label="Request ID" value={selectedRecord.requestId || selectedRecord._id} />
+                  <Detail label="Request Date" value={selectedRecord.requestDate ? new Date(selectedRecord.requestDate).toLocaleString() : (selectedRecord.requiredDate ? new Date(selectedRecord.requiredDate).toLocaleString() : '-')} />
                   <Detail label="Status" value={selectedRecord.status || '-'} />
-                  <Detail label="Location" value={selectedRecord.location || '-'} full />
+                  <Detail label="Units Required" value={selectedRecord.bloodUnitsCount ?? '-'} />
                 </div>
               </section>
 
-              <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Patient</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Name" value={selectedRecord.patientName || '-'} />
+              <section className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Hospital Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <Detail label="Hospital Name" value={selectedRecord.hospitalName || '-'} />
+                  <Detail label="Phone" value={selectedRecord.hospitalPhone || '-'} />
+                  <Detail label="Address" value={selectedRecord.hospitalAddress || selectedRecord.location || '-'} full />
+                </div>
+              </section>
+
+              <section className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Patient Information</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <Detail label="Patient Name" value={selectedRecord.patientName || '-'} />
                   <Detail label="Blood Group" value={selectedRecord.bloodGroup || '-'} />
                   <Detail label="Priority" value={selectedRecord.priority || '-'} />
+                  <Detail label="Medical Condition" value={selectedRecord.medicalCondition || '-'} />
                   <Detail label="Available Donors" value={selectedRecord.availableDonors ?? '-'} />
                 </div>
               </section>
 
-              <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Hospital</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Hospital ID" value={selectedRecord.hospitalId || '-'} />
-                </div>
-              </section>
-
-              <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Volunteers</h4>
+              <section className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Volunteers</h4>
                 <div className="space-y-3 text-sm">
                   {(selectedRecord.volunteers && selectedRecord.volunteers.length > 0) ? (
                     selectedRecord.volunteers.map((v, idx) => (
-                      <div key={idx} className="p-3 bg-gray-50 border border-gray-100 rounded-md">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <div key={idx} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center mb-2">
+                          <span className="text-xs font-semibold text-blue-700 uppercase">Volunteer #{idx + 1}</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                           <Detail label="Name" value={v.donorName || v.donorId || '-'} />
                           <Detail label="Contact" value={v.contact || '-'} />
                           <Detail label="Expected Time" value={v.expectedDonationTime ? new Date(v.expectedDonationTime).toLocaleString() : '-'} />
@@ -352,20 +364,20 @@ export default function DonationHistory({  }: DonationHistoryProps) {
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-gray-500">No volunteers recorded for this request.</div>
+                    <div className="text-sm text-gray-500 italic">No volunteers recorded for this request.</div>
                   )}
                 </div>
               </section>
 
-              <section>
-                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Fulfillment</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <Detail label="Fulfilled By" value={selectedRecord.fulfilledByNames?.toString() || selectedRecord.fulfilledBy || '-'} />
+              <section className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Fulfillment Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  <Detail label="Fulfilled By" value={selectedRecord.fulfilledByName || selectedRecord.fulfilledBy || '-'} />
                   <Detail label="Fulfilled At" value={selectedRecord.fulfilledAt ? new Date(selectedRecord.fulfilledAt).toLocaleString() : '-'} />
                 </div>
               </section>
             </div>
-            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3 flex-shrink-0">
               <button
                 onClick={closeModal}
                 className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-100"

@@ -28,9 +28,7 @@ function App() {
 
   // Function to handle login using the API
   const handleLogin = async (credentials: any) => {
-    console.log('handleLogin called with:', credentials);
     const response = await loginUser(credentials);
-    console.log('Login response:', response);
     const respData: any = response.data;
     // Support responses that either return the user directly or wrap it in a `user` field
     const userData: any = respData.user ?? respData;
@@ -105,7 +103,7 @@ function App() {
             }}
             isOwnProfile={true}
             onUpdate={(data) => {
-              setCurrentUser((prev:any) => ({
+              setCurrentUser((prev: any) => ({
                 ...prev,
                 ...(data.firstName ? { firstName: data.firstName } : {}),
                 ...(data.lastName ? { lastName: data.lastName } : {}),
@@ -134,7 +132,7 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
-        userRole={currentUser.userRole} 
+        userRole={currentUser.userRole}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header

@@ -138,7 +138,7 @@ const loginUser = async (req, res) => {
         );
         const originalPassword = hashedPassword.toString(CryptoJs.enc.Utf8);
         if (originalPassword !== req.body.password) {
-            return res.status(401).json({ msg: "Invalid Username or Password" });
+            return res.status(401).json({ msg: "Invalid Password" });
         }
 
         // Fetch roleId for the payload role (ensure roleId exists)

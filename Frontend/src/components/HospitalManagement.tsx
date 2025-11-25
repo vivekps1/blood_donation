@@ -81,6 +81,7 @@ export const HospitalManagement: React.FC = () => {
 
   const [emailError, setEmailError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
+  const [nameError, setNameError] = useState<string>('');
   const addPlaceRef = useRef<HTMLInputElement | null>(null);
   const editPlaceRef = useRef<HTMLInputElement | null>(null);
 
@@ -146,12 +147,33 @@ export const HospitalManagement: React.FC = () => {
     } as any);
     setEmailError('');
     setPhoneError('');
+    setNameError('');
   };
 
+  const validateHospitalName = (name: string): string => {
+    if (!name || name.trim().length === 0) {
+      return 'Hospital name is required';
+    }
+    if (name.trim().length < 3) {
+      return 'Hospital name must be at least 3 characters';
+    }
+    if (name.trim().length > 100) {
+      return 'Hospital name must not exceed 100 characters';
+    }
+    if (!/^[a-zA-Z0-9\s\-&,.()]+$/.test(name)) {
+      return 'Hospital name contains invalid characters';
+    }
+    return '';
+  };
 
   const handleSave = async () => {
     if (isAdding) {
       // Block save if validation errors or required fields missing
+      const nameValidationError = validateHospitalName(editData.hospitalName || '');
+      if (nameValidationError) {
+        setNameError(nameValidationError);
+        return;
+      }
       if (emailError || phoneError) return;
       if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
         alert('Please fill all required fields');
@@ -190,6 +212,11 @@ export const HospitalManagement: React.FC = () => {
     } else if (isEditing) {
       try {
         // Validation for edit
+        const nameValidationError = validateHospitalName(editData.hospitalName || '');
+        if (nameValidationError) {
+          setNameError(nameValidationError);
+          return;
+        }
         if (emailError || phoneError) return;
         if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
           alert('Please fill all required fields');
@@ -229,6 +256,7 @@ export const HospitalManagement: React.FC = () => {
     setOriginalHospitalData({});
     setEmailError('');
     setPhoneError('');
+    setNameError('');
   };
 
   const handleDelete = async (id: string) => {
@@ -439,20 +467,33 @@ export const HospitalManagement: React.FC = () => {
                 <button onClick={handleCancel} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Hospital Name"
-                  value={editData.hospitalName || ''}
-                  onChange={(e) => setEditData({...editData, hospitalName: e.target.value})}
-                  className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Name *</label>
+                  <input
+                    type="text"
+                    placeholder="Enter hospital name"
+                    value={editData.hospitalName || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditData({...editData, hospitalName: val});
+                      if (!val) {
+                        setNameError('');
+                        return;
+                      }
+                      const error = validateHospitalName(val);
+                      setNameError(error);
+                    }}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${nameError ? 'border-red-500' : ''}`}
+                  />
+                  {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
+                </div>
                 <PlacesAutocomplete
                   value={editData.address as string}
                   placeholder="Address"
                   onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })}
                 />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
                   <div className="flex w-full">
                     <span className="px-3 py-3 border rounded-l-lg bg-gray-100 text-sm text-gray-700 select-none">+91</span>
                     <input
@@ -471,9 +512,10 @@ export const HospitalManagement: React.FC = () => {
                   {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                   <input
                     type="email"
-                    placeholder="Email"
+                    placeholder="hospital@example.com"
                     value={editData.email || ''}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -481,7 +523,7 @@ export const HospitalManagement: React.FC = () => {
                       if (!val) { setEmailError(''); return; }
                       setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
                     }}
-                    className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
                   />
                   {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
                 </div>
@@ -621,10 +663,29 @@ export const HospitalManagement: React.FC = () => {
                 <button onClick={handleCancel} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
-                <input type="text" placeholder="Hospital Name" value={editData.hospitalName || ''} onChange={e => setEditData({...editData, hospitalName: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Name *</label>
+                  <input
+                    type="text"
+                    placeholder="Enter hospital name"
+                    value={editData.hospitalName || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditData({...editData, hospitalName: val});
+                      if (!val) {
+                        setNameError('');
+                        return;
+                      }
+                      const error = validateHospitalName(val);
+                      setNameError(error);
+                    }}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${nameError ? 'border-red-500' : ''}`}
+                  />
+                  {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
+                </div>
                 <PlacesAutocomplete value={editData.address as string} placeholder="Address" onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })} />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
                   <div className="flex w-full">
                     <span className="px-3 py-3 border rounded-l-lg bg-gray-100 text-sm text-gray-700 select-none">+91</span>
                     <input
@@ -643,12 +704,19 @@ export const HospitalManagement: React.FC = () => {
                   {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}
                 </div>
                 <div>
-                  <input type="email" placeholder="Email" value={editData.email || ''} onChange={e => {
-                    const val = e.target.value;
-                    setEditData({...editData, email: val});
-                    if (!val) { setEmailError(''); return; }
-                    setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
-                  }} className={`p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <input
+                    type="email"
+                    placeholder="hospital@example.com"
+                    value={editData.email || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditData({...editData, email: val});
+                      if (!val) { setEmailError(''); return; }
+                      setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
+                    }}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
+                  />
                   {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
                 </div>
                 <input type="text" placeholder="Reg No" value={editData.regNo || ''} onChange={e => setEditData({...editData, regNo: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
