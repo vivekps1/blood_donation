@@ -11,6 +11,16 @@ const UserSchema = mongoose.Schema({
     address:{type:String},
     height: { type: Number },
     weight: { type: Number },
+    photo: { type: String },
+    locationName: { type: String },
+    locationGeo: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: { type: [Number], default: void 0 }
+    },
     isActive:{type:Number, default:0}, 
     roleId:{type:Number, default:1}, 
 },
@@ -18,4 +28,6 @@ const UserSchema = mongoose.Schema({
     timestamps: true
 })
 
+// Create 2dsphere index for locationGeo if not exists
+UserSchema.index({ locationGeo: '2dsphere' });
 module.exports = mongoose.model("User", UserSchema)

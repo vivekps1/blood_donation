@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 
-const PlacesAutocomplete = React.memo(function PlacesAutocomplete({ value, onSelect, placeholder }: { value?: string; onSelect: (payload: { address: string; lat?: number; lng?: number }) => void; placeholder?: string }) {
+const PlacesAutocomplete = React.memo(function PlacesAutocomplete({ value, onSelect, placeholder, className, id }: { value?: string; onSelect: (payload: { address: string; name?: string; lat?: number; lng?: number }) => void; placeholder?: string; className?: string; id?: string }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const onSelectRef = useRef(onSelect);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
@@ -28,12 +28,13 @@ const PlacesAutocomplete = React.memo(function PlacesAutocomplete({ value, onSel
       if (!inputRef.current) return;
       // @ts-ignore
       autocomplete = new (window as any).google.maps.places.Autocomplete(inputRef.current, { types: ['geocode'] });
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        const address = place.formatted_address || place.name || inputRef.current?.value || '';
-        const lat = place.geometry?.location ? place.geometry.location.lat() : undefined;
-        const lng = place.geometry?.location ? place.geometry.location.lng() : undefined;
-        onSelectRef.current({ address, lat, lng });
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          const address = place.formatted_address || place.name || inputRef.current?.value || '';
+          const name = place.name || '';
+          const lat = place.geometry?.location ? place.geometry.location.lat() : undefined;
+          const lng = place.geometry?.location ? place.geometry.location.lng() : undefined;
+          onSelectRef.current({ address, lat, lng, name });
       });
     }).catch((err) => {
       console.warn('Failed to load Google Maps script', err);
@@ -48,11 +49,13 @@ const PlacesAutocomplete = React.memo(function PlacesAutocomplete({ value, onSel
 
   return (
     <input
+      id={id}
       ref={inputRef}
-      value={value}
+      value={value || ''}
       onChange={(e) => onSelect({ address: e.target.value })}
-      placeholder={'Search location'}
-      className="border p-2 rounded"
+      placeholder={placeholder || 'Search location'}
+      className={className || 'w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent h-12'}
+      aria-label={placeholder || 'Search location'}
     />
   );
 });

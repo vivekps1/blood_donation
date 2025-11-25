@@ -28,6 +28,9 @@ app.use("/api/v1/roles", roleRoute)
 app.use('/api/v1/donation/history', donationHistoryAggregateRoute);
 app.use('/api/v1/donation-requests', donationRequestRoute);
 app.use('/api/v1/stats', statsRoute);
+// Serve uploaded files (profile pics)
+const path = require('path');
+app.use('/uploads', require('express').static(path.join(__dirname, 'uploads')));
 
 const userProfileRoute = require("./routes/userProfile");
 app.use('/api/v1/user-profile', userProfileRoute);

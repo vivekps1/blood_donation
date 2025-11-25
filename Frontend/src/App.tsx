@@ -103,24 +103,33 @@ function App() {
             }}
             isOwnProfile={true}
             onUpdate={(data) => {
-              setCurrentUser((prev: any) => ({
-                ...prev,
-                ...(data.firstName ? { firstName: data.firstName } : {}),
-                ...(data.lastName ? { lastName: data.lastName } : {}),
-                ...(data.phone ? { phoneNumber: data.phone } : {}),
-                ...(data.email ? { email: data.email } : {}),
-                ...(data.address ? { address: data.address } : {}),
-                ...(data.height ? { height: data.height } : {}),
-                ...(data.weight ? { weight: data.weight } : {}),
-                ...(data.dateofBirth ? { dateofBirth: data.dateofBirth } : {}),
-              }));
+              setCurrentUser((prev:any) => {
+                const updated = {
+                  ...prev,
+                  ...(data.firstName ? { firstName: data.firstName } : {}),
+                  ...(data.lastName ? { lastName: data.lastName } : {}),
+                  ...(data.phone ? { phoneNumber: data.phone } : {}),
+                  ...(data.email ? { email: data.email } : {}),
+                  ...(data.address ? { address: data.address } : {}),
+                  ...(data.height ? { height: data.height } : {}),
+                  ...(data.weight ? { weight: data.weight } : {}),
+                  ...(data.dateofBirth ? { dateofBirth: data.dateofBirth } : {}),
+                  ...(data.latitude ? { latitude: data.latitude } : {}),
+                  ...(data.longitude ? { longitude: data.longitude } : {}),
+                  ...(data.locationGeo ? { locationGeo: data.locationGeo } : {}),
+                  ...(data.photo ? { photo: data.photo } : {}),
+                  ...(data.locationName ? { locationName: data.locationName } : {}),
+                };
+                Cookies.set('user', JSON.stringify(updated), { expires: 7 });
+                return updated;
+              });
             }}
           />
         );
       case 'dashboard':
-        return <Dashboard userRole={currentUser.userRole} />;
+        return <Dashboard userRole={currentUser.userRole} setCurrentPage={setCurrentPage} />;
       default:
-        return <Dashboard userRole={currentUser.userRole} />;
+        return <Dashboard userRole={currentUser.userRole} setCurrentPage={setCurrentPage} />;
     }
   };
 

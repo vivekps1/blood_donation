@@ -1,10 +1,9 @@
 import  React, { useState, useEffect } from 'react';
+import PlacesAutocomplete from './PlacesAutocomplete';
+import MapPicker from './MapPicker';
 import { User, Mail, Lock, Phone, MapPin, Eye, EyeOff, Activity } from 'lucide-react';
 
-interface LoginData {
-  email: string;
-  password: string;
-}
+// Removed login data type since this component is registration-only.
 
 interface RegisterData {
   firstName: string;
@@ -14,6 +13,9 @@ interface RegisterData {
   confirmPassword: string;
   phone: string;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationName?: string | null;
   bloodType: string;
   height?: string;
   weight?: string;
@@ -29,7 +31,6 @@ export default function RegisterUser({
   setShowRegister: (show: boolean) => void;
   showRegister: boolean;
 }) {
-  const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
@@ -46,9 +47,13 @@ export default function RegisterUser({
     confirmPassword: '',
     phone: '',
     address: '',
+    latitude: null,
+    longitude: null,
+    locationName: null,
     bloodType: ''
     ,height: '', weight: '', dateOfBirth: ''
   });
+  const [showMap, setShowMap] = useState<boolean>(false);
 
   const initialRegisterData: RegisterData = {
     firstName: '',
@@ -58,6 +63,8 @@ export default function RegisterUser({
     confirmPassword: '',
     phone: '',
     address: '',
+    latitude: null,
+    longitude: null,
     bloodType: ''
     ,height: '', weight: '', dateOfBirth: ''
   };
@@ -71,10 +78,7 @@ export default function RegisterUser({
 
   const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('Login:', loginData);
-  };
+  // Login not used in this modal/flow; leaving registration only
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,6 +128,11 @@ export default function RegisterUser({
       password: registerData.password,
       phoneNumber: `+91${cleanedPhone}`,
       address: registerData.address,
+      // include geo coordinates and location name if present
+      latitude: typeof registerData.latitude === 'number' ? registerData.latitude : undefined,
+      longitude: typeof registerData.longitude === 'number' ? registerData.longitude : undefined,
+      locationGeo: (typeof registerData.latitude === 'number' && typeof registerData.longitude === 'number') ? { type: 'Point', coordinates: [registerData.longitude, registerData.latitude] } : undefined,
+      locationName: registerData.locationName || undefined,
       bloodGroup: registerData.bloodType,
       height: registerData.height,
       weight: registerData.weight,
@@ -283,13 +292,11 @@ export default function RegisterUser({
             <div>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Address"
+                <PlacesAutocomplete
                   value={registerData.address}
-                  onChange={(e) => setRegisterData({...registerData, address: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  autoComplete="street-address"
+                  placeholder="Search location"
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent h-12"
+                  onSelect={({ address, name, lat, lng }) => setRegisterData({ ...registerData, address: address || '', locationName: name || null, latitude: typeof lat === 'number' ? lat : null, longitude: typeof lng === 'number' ? lng : null })}
                 />
               </div>
             </div>

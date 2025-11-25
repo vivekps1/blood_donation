@@ -7,7 +7,9 @@ const verifyToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
 
     if (authHeader) {
-        const token = authHeader;
+            // support header values like "Bearer <token>" or raw token
+            let token = authHeader;
+            if (typeof token === 'string' && token.startsWith('Bearer ')) token = token.slice('Bearer '.length);
         jwt.verify(token, process.env.JWT_SEC, (err, user) => {
             if (err) return res.status(403).json("Token is invalid"); 
             console.log(user);

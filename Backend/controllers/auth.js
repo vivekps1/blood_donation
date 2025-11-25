@@ -92,6 +92,38 @@ const registerUser = async (req, res) => {
             await new Donor(donorData).save();
         }
 
+        // If address or locationGeo were provided in the request, create a UserProfile
+        try {
+            const profilePayload = {
+                userId: user._id,
+                address: req.body.address || undefined,
+                city: req.body.city || undefined,
+                state: req.body.state || undefined,
+                country: req.body.country || undefined,
+                pincode: req.body.pincode || undefined,
+            };
+            if (req.body.locationGeo && req.body.locationGeo.type === 'Point' && Array.isArray(req.body.locationGeo.coordinates) && req.body.locationGeo.coordinates.length === 2) {
+                profilePayload.locationGeo = req.body.locationGeo;
+                if (req.body.locationName) profilePayload.locationName = req.body.locationName;
+            } else if (typeof req.body.latitude !== 'undefined' && typeof req.body.longitude !== 'undefined') {
+                // support legacy flat lat/lng fields
+                const lat = parseFloat(req.body.latitude);
+                const lng = parseFloat(req.body.longitude);
+                if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+                    profilePayload.locationGeo = { type: 'Point', coordinates: [lng, lat] };
+                }
+            }
+            // only create profile if we have some non-empty fields
+            const hasProfileData = profilePayload.address || profilePayload.locationGeo;
+            if (hasProfileData) {
+                const UserProfile = require('../models/UserProfile');
+                const newProfile = new UserProfile(profilePayload);
+                await newProfile.save();
+            }
+        } catch (e) {
+            console.warn('Failed to create initial user profile', e.message || e);
+        }
+
         // create token and return sanitized user object
         const accessToken = jwt.sign(
             { userId: user._id, roleId: user.roleId },
@@ -108,8 +140,10 @@ const registerUser = async (req, res) => {
                 // Try to attach address from UserProfile if it exists
                 try {
                     const profile = await UserProfile.findOne({ userId: user._id }).lean();
-                    if (profile && profile.address) {
-                        info.address = profile.address;
+                    if (profile) {
+                        if (profile.address) info.address = profile.address;
+                        if (profile.locationGeo) info.locationGeo = profile.locationGeo;
+                        if (profile.locationName) info.locationName = profile.locationName;
                     }
                 } catch (e) {
                     // ignore profile lookup errors
@@ -160,7 +194,15 @@ const loginUser = async (req, res) => {
             { expiresIn: "5d" }
         );
         info.userRole = role.userRole;
-        // Removed adminEmail field from response per requirement
+        // Attach profile details if present
+        try {
+            const profile = await UserProfile.findOne({ userId: user._id }).lean();
+            if (profile) {
+                if (profile.address) info.address = profile.address;
+                if (profile.locationGeo) info.locationGeo = profile.locationGeo;
+                if (profile.locationName) info.locationName = profile.locationName;
+            }
+        } catch (e) { /* ignore */ }
         // respond with consistent shape: { user, accessToken }
         res.status(200).json({ user: info, accessToken });
     } catch (error) {
