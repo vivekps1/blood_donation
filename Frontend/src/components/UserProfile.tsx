@@ -1,6 +1,8 @@
-import  React, { useState } from 'react';
-import { updateUserProfile } from '../utils/axios';
-import { User, Phone, Mail, Camera, FileText, History, Edit2, Save } from 'lucide-react';
+import  React, { useState, useEffect } from 'react';
+import { updateUserProfile, uploadProfilePhoto } from '../utils/axios';
+import PlacesAutocomplete from './PlacesAutocomplete';
+import MapPicker from './MapPicker';
+import { User, Phone, Mail, Camera, FileText, History, Edit2, Save, MapPin } from 'lucide-react';
 
 interface UserData {
   id: string;
@@ -10,6 +12,10 @@ interface UserData {
   phone: string;
   bloodGroup?: string;
   address?: string;
+  locationName?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationGeo?: { type: string; coordinates: number[] };
   adminEmail?: string;
   height?: number | string;
   weight?: number | string;
@@ -35,17 +41,39 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   onUpdate 
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({
+  const [editData, setEditData] = useState<any>({
     firstName: user.firstName,
     lastName: user.lastName,
     phone: user.phone,
     email: user.email,
     address: (user as any).address || '',
+    locationName: (user as any).locationName || '',
+    latitude: (user as any).locationGeo && Array.isArray((user as any).locationGeo.coordinates) ? (user as any).locationGeo.coordinates[1] : null,
+    longitude: (user as any).locationGeo && Array.isArray((user as any).locationGeo.coordinates) ? (user as any).locationGeo.coordinates[0] : null,
     height: (user as any).height || '',
     weight: (user as any).weight || '',
     dateofBirth: (user as any).dateofBirth ? new Date((user as any).dateofBirth).toISOString().slice(0,10) : '',
   });
   const [showHealthHistory, setShowHealthHistory] = useState(false);
+  const [showMap, setShowMap] = useState<boolean>(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState<boolean>(false);
+  const [localPhotoPreview, setLocalPhotoPreview] = useState<string | null>(null);
+
+  // clear local preview when server photo is set or on unmount
+  useEffect(() => {
+    if (user.photo && localPhotoPreview) {
+      try { URL.revokeObjectURL(localPhotoPreview); } catch (e) { /* ignore */ }
+      setLocalPhotoPreview(null);
+    }
+  }, [user.photo]);
+
+  useEffect(() => {
+    return () => {
+      if (localPhotoPreview) {
+        try { URL.revokeObjectURL(localPhotoPreview); } catch (e) { /* ignore */ }
+      }
+    };
+  }, []);
 
   const healthHistory = [
     { date: '2024-01-15', status: 'Healthy', details: 'All parameters normal' },
@@ -59,19 +87,27 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       lastName: editData.lastName,
       // Only allow updating first/last name and address via this UI
       address: editData.address,
+      latitude: typeof editData.latitude === 'number' ? editData.latitude : undefined,
+      longitude: typeof editData.longitude === 'number' ? editData.longitude : undefined,
+      locationGeo: (typeof editData.latitude === 'number' && typeof editData.longitude === 'number') ? { type: 'Point', coordinates: [editData.longitude, editData.latitude] } : undefined,
+      locationName: editData.locationName || undefined,
       height: editData.height,
       weight: editData.weight,
       dateofBirth: editData.dateofBirth,
     };
     updateUserProfile(user.id, payload)
-      .then(() => {
+      .then((res:any) => {
+        const data = res.data || {};
         onUpdate?.({
-          firstName: editData.firstName,
-          lastName: editData.lastName,
-          address: editData.address,
-          height: editData.height,
-          weight: editData.weight,
-          dateofBirth: editData.dateofBirth,
+          firstName: data.firstName ?? editData.firstName,
+          lastName: data.lastName ?? editData.lastName,
+          address: data.address ?? editData.address,
+          height: data.height ?? editData.height,
+          weight: data.weight ?? editData.weight,
+          dateofBirth: data.dateofBirth ?? editData.dateofBirth,
+          latitude: editData.latitude ?? data.latitude,
+          longitude: editData.longitude ?? data.longitude,
+          locationGeo: data.locationGeo ?? (typeof editData.latitude === 'number' && typeof editData.longitude === 'number' ? { type: 'Point', coordinates: [editData.longitude, editData.latitude]} : undefined),
         });
         setIsEditing(false);
       })
@@ -80,11 +116,36 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       });
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      onUpdate?.({ photo: url });
+    if (file && isOwnProfile) {
+      // create a local preview immediately so users see the selected image
+      try {
+        if (localPhotoPreview) URL.revokeObjectURL(localPhotoPreview);
+      } catch (er) { /* ignore */ }
+      const previewUrl = URL.createObjectURL(file);
+      setLocalPhotoPreview(previewUrl);
+      onUpdate?.({ photo: previewUrl });
+      setUploadingPhoto(true);
+      const _token = localStorage.getItem('token');
+      console.log('Starting photo upload', { userId: user.id, tokenPresent: !!_token, fileName: file.name, fileSize: file.size });
+      try {
+        const res: any = await uploadProfilePhoto(user.id, file);
+        console.log('Upload response', res && res.data);
+        const photoUrl = res.data && res.data.photo ? res.data.photo : res.data?.user?.photo;
+        if (photoUrl) onUpdate?.({ photo: photoUrl });
+        // we no longer need the local preview after server returns the hosted url
+        if (localPhotoPreview) {
+          try { URL.revokeObjectURL(localPhotoPreview); } catch (e) { /*ignore*/ }
+          setLocalPhotoPreview(null);
+        }
+      } catch (err) {
+        console.warn('Photo upload failed', err);
+        // fall back to local preview
+        // local preview is already set
+      } finally {
+        setUploadingPhoto(false);
+      }
     }
   };
 
@@ -110,17 +171,23 @@ export const UserProfile: React.FC<UserProfileProps> = ({
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <div className="flex items-center gap-6">
           <div className="relative">
-            <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
-              {user.photo ? (
-                <img src={user.photo} alt="Profile" className="w-full h-full object-cover" />
+              <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden relative">
+              {localPhotoPreview || user.photo ? (
+                <img src={localPhotoPreview ?? user.photo} alt="Profile" className="w-full h-full object-cover" />
               ) : (
                 <User className="w-12 h-12 text-gray-400" />
+              )}
+              {uploadingPhoto && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/40">
+                  <div className="w-6 h-6 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+                </div>
               )}
             </div>
             {isOwnProfile && (
               <label className="absolute bottom-0 right-0 bg-blue-600 rounded-full p-1.5 cursor-pointer hover:bg-blue-700">
                 <Camera className="w-4 h-4 text-white" />
                 <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
+                {uploadingPhoto && <span className="sr-only">Uploading...</span>}
               </label>
             )}
           </div>
@@ -222,15 +289,54 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
             {isEditing ? (
-              <input
-                type="text"
-                value={editData.address}
-                onChange={(e) => setEditData({...editData, address: e.target.value})}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <PlacesAutocomplete
+                    value={editData.address}
+                    placeholder="Search location"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-12"
+                    onSelect={({ address, name, lat, lng }) => setEditData({ ...editData, address: address || '', locationName: name || editData.locationName, latitude: typeof lat === 'number' ? lat : editData.latitude, longitude: typeof lng === 'number' ? lng : editData.longitude })}
+                  />
+                </div>
+                {typeof editData.latitude === 'number' && typeof editData.longitude === 'number' && (
+                  <div className="text-xs text-gray-500 mt-1">Coordinates: {editData.latitude.toFixed(6)}, {editData.longitude.toFixed(6)}</div>
+                )}
+                <div className="mt-2">
+                  <label className="sr-only">Location name</label>
+                  <input
+                    type="text"
+                    value={editData.locationName || ''}
+                    onChange={(e) => setEditData({ ...editData, locationName: e.target.value })}
+                    placeholder="Location name (optional)"
+                    className="w-full mt-2 p-2 border rounded-lg bg-white"
+                  />
+                </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMap((s) => !s)}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    {showMap ? 'Hide map' : 'Verify pin on map'}
+                  </button>
+                  {showMap && (
+                    <div className="mt-3 bg-gray-50 p-2 rounded">
+                      <MapPicker
+                        lat={editData.latitude ?? 0}
+                        lng={editData.longitude ?? 0}
+                        onChange={(lat, lng) => setEditData({ ...editData, latitude: lat, longitude: lng })}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <span>{user.address || '-'}</span>
+                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div className="font-semibold">{user.locationName || user.address || '-'}</div>
+                  <div className="text-xs text-gray-500">{user.address || ''}</div>
+                </div>
               </div>
             )}
           </div>

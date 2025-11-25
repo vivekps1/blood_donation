@@ -1,7 +1,6 @@
 const Donor = require("../models/Donor");
 const Hospital = require("../models/Hospital");
 const DonationRequest = require("../models/DonationRequest");
-const DonationHistory = require("../models/DonationHistory");
 
 // Return simple system-wide statistics (counts and sums).
 const getSystemStats = async (req, res) => {
@@ -17,8 +16,8 @@ const getSystemStats = async (req, res) => {
     ]);
     const totalUnitsRequested = (unitsAgg && unitsAgg[0] && unitsAgg[0].totalUnitsRequested) || 0;
 
-    // Total successful donations recorded in donation history
-    const totalSuccessfulDonations = await DonationHistory.countDocuments({ status: { $in: ["Success", "SUCCESS", "success"] } });
+    // Total successful donations — count history entries with status 'Completed' (case-insensitive)
+    const totalSuccessfulDonations = await DonationRequest.countDocuments({ status: { $regex: /^completed$/i } });
 
     return res.status(200).json({
       totalDonors,

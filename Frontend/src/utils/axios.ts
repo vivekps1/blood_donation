@@ -1,6 +1,17 @@
 // User Profile APIs
 export const getUserProfile = (userId: string | number) => api.get(`/user-profile/${userId}`);
 export const updateUserProfile = (userId: string | number, profileData: any) => api.put(`/user-profile/${userId}`, profileData);
+
+// Upload a user's profile photo
+export const uploadProfilePhoto = (userId: string | number, file: File) => {
+  const fd = new FormData();
+  fd.append('photo', file);
+  // Let axios set multipart boundary header automatically. Also ensure token is sent explicitly in case interceptors not set.
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = token;
+  return api.post(`/user-profile/${userId}/photo`, fd, { headers });
+};
 export const createUserProfile = (profileData: any) => api.post('/user-profile', profileData);
 // Hospital Management APIs
 export const getAllHospitals = () => api.get('/hospitals');
