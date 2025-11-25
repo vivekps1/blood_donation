@@ -18,7 +18,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentPage, setCurr
     {id: 'donationhistory', name: 'Donation History', icon: Droplet},
     { id: 'requests', name: 'Donation Requests', icon: Activity },
     { id: 'notifications', name: 'Notifications', icon: Bell },
-    { id: 'reports', name: 'Reports', icon: Database },
   ];
  
 

@@ -5,7 +5,7 @@ import { User, Phone, Mail, Camera, FileText, History, Edit2, Save } from 'lucid
 interface UserData {
   id: string;
   firstName: string;
-  lastName: string;
+  lastName?: string;
   email: string;
   phone: string;
   bloodGroup?: string;
@@ -102,8 +102,10 @@ export const UserProfile: React.FC<UserProfileProps> = ({
     }
     // default to +91 and full number
     return { country: '+91', number: p };
-  };
-
+  }; 
+  // Read admin email directly from environment (Vite) instead of user object
+  const adminEmail = (import.meta as any).env?.ADMIN_EMAIL || 'admin@yourdomain.com';
+  // console.log("Admin email (env):", adminEmail);
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       {/* Profile Header */}
@@ -127,7 +129,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           
           <div className="flex-1">
             <div className="flex items-center justify-between mb-2">
-              <h1 className="text-2xl font-bold">{`${user.firstName} ${user.lastName}`}</h1>
+              <h1 className="text-2xl font-bold">{user.firstName}{user.lastName ? ` ${user.lastName}` : ''}</h1>
               {isOwnProfile && (
                 <button
                   onClick={() => isEditing ? handleSave() : setIsEditing(true)}
@@ -150,8 +152,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({
         <h2 className="text-lg font-semibold mb-4">Personal Information</h2>
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-100 text-yellow-800 rounded">
           To change <strong>email</strong>, <strong>phone</strong>, or <strong>blood group</strong>, contact admin at{' '}
-          <a className="underline font-medium" href={`mailto:${user.adminEmail || 'admin@yourdomain.com'}`}>
-            {user.adminEmail || 'admin@yourdomain.com'}
+          <a className="underline font-medium" href={`mailto:${adminEmail}`}>
+            {adminEmail}
           </a>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
@@ -183,7 +185,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                 <User className="w-4 h-4 text-gray-400" />
-                <span>{user.lastName}</span>
+                <span>{user.lastName || '-'}</span>
               </div>
             )}
           </div>
@@ -259,13 +261,15 @@ export const UserProfile: React.FC<UserProfileProps> = ({
                   type="number"
                   value={(editData as any).height}
                   onChange={(e) => setEditData({...editData, height: e.target.value})}
-                  className="flex-1 min-w-0 p-3 border rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 min-w-0 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <span className="px-3 py-3 border border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">cm</span>
+                {((editData as any).height !== undefined && (editData as any).height !== null && String((editData as any).height).trim() !== '') && (
+                  <span className="ml-2 text-sm text-gray-600">cm</span>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <span>{user.height !== undefined && user.height !== null ? `${user.height} cm` : '-'}</span>
+                <span>{(user.height !== undefined && user.height !== null && String(user.height).trim() !== '') ? `${user.height} cm` : '-'}</span>
               </div>
             )}
           </div>
@@ -278,13 +282,15 @@ export const UserProfile: React.FC<UserProfileProps> = ({
                   type="number"
                   value={(editData as any).weight}
                   onChange={(e) => setEditData({...editData, weight: e.target.value})}
-                  className="flex-1 min-w-0 p-3 border rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 min-w-0 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <span className="px-3 py-3 border border-l-0 rounded-r-lg bg-gray-50 text-sm text-gray-600">kg</span>
+                {((editData as any).weight !== undefined && (editData as any).weight !== null && String((editData as any).weight).trim() !== '') && (
+                  <span className="ml-2 text-sm text-gray-600">kg</span>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <span>{user.weight !== undefined && user.weight !== null ? `${user.weight} kg` : '-'}</span>
+                <span>{(user.weight !== undefined && user.weight !== null && String(user.weight).trim() !== '') ? `${user.weight} kg` : '-'}</span>
               </div>
             )}
           </div>

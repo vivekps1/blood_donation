@@ -24,10 +24,28 @@ const registerUser = async (req, res) => {
         return res.status(401).json({ msg: "Invalid role specified" });
     }
 
+    // Duplicate validation for email and phone
+    try {
+        const dupChecks = await Promise.all([
+            User.findOne({ email: req.body.email }).lean(),
+            User.findOne({ phoneNumber: req.body.phoneNumber }).lean()
+        ]);
+        const dupFields = {};
+        if (dupChecks[0]) dupFields.email = true;
+        if (dupChecks[1]) dupFields.phoneNumber = true;
+        if (Object.keys(dupFields).length) {
+            const parts = [];
+            if (dupFields.email) parts.push('email');
+            if (dupFields.phoneNumber) parts.push('phone number');
+            return res.status(409).json({ code: 'DUPLICATE', msg: `${parts.join(' and ')} already exists`, fields: dupFields });
+        }
+    } catch (e) {
+        return res.status(500).json({ msg: e.message || e });
+    }
+
     const newUser = User({
         firstName: req.body.firstName,
         lastName: req.body.lastName,
-        userName: req.body.userName,
         email: req.body.email,
         password: CryptoJs.AES.encrypt(
             req.body.password,
@@ -36,6 +54,7 @@ const registerUser = async (req, res) => {
         phoneNumber: req.body.phoneNumber,
         bloodGroup : req.body.bloodGroup, 
         dateofBirth: req.body.dateofBirth ,
+        address: req.body.address,
         height: req.body.height || null,
         weight: req.body.weight || null,
         roleId : payloadRoleDoc.roleId, 
@@ -44,25 +63,33 @@ const registerUser = async (req, res) => {
     try {
         const user = await newUser.save();
         
-        // If the user's role is 'donor', also create a donor record
-        if (roleToUse !== 0) {
+        // Create donor record only if role is not admin (roleId !=0 and userRole != 'admin')
+        if (roleToUse !== 0 && payloadRoleDoc.userRole !== 'admin') {
+            // derive age from dateofBirth if provided
+            let age = 0;
+            if (req.body.dateofBirth) {
+                const dob = new Date(req.body.dateofBirth);
+                const diff = Date.now() - dob.getTime();
+                const ageDt = new Date(diff);
+                age = Math.abs(ageDt.getUTCFullYear() - 1970);
+            }
             const donorData = {
-                name: `${req.body.firstName} ${req.body.lastName}`,
+                userId: user._id,
+                name: `${req.body.firstName} ${req.body.lastName}`.trim(),
                 email: req.body.email,
+                address: req.body.address,
                 phoneNumber: req.body.phoneNumber,
                 bloodGroup: req.body.bloodGroup,
-                // Required fields that might need to be added to user registration
-                height: req.body.height || '',  // You'll need to add these to registration
-                weight: req.body.weight || '',
+                height: (req.body.height !== undefined ? String(req.body.height) : ''),
+                weight: (req.body.weight !== undefined ? String(req.body.weight) : ''),
                 date: new Date().toISOString(),
-                age: req.body.age || 0,        // Calculate from dateofBirth or get from registration
+                dateofBirth: req.body.dateofBirth || null,
+                age: age,
                 bloodPressure: req.body.bloodPressure || 0,
                 diseases: req.body.diseases || 'No',
-                status: 0  // default status
+                status: 0
             };
-
-            const newDonor = new Donor(donorData);
-            await newDonor.save();
+            await new Donor(donorData).save();
         }
 
         // create token and return sanitized user object
@@ -87,8 +114,9 @@ const registerUser = async (req, res) => {
                 } catch (e) {
                     // ignore profile lookup errors
                 }
-                // Include admin contact from env if provided
-                info.adminEmail = process.env.ADMIN_EMAIL || 'admin@yourdomain.com';
+                // Removed adminEmail field from response per requirement
+                console.log("Registered user info:", info);
+                console.log("env email:", process.env.ADMIN_EMAIL);
                 res.status(200).json({ user: info, accessToken });
     } catch (error) {
         res.status(500).json({ msg: error.message || error });
@@ -110,7 +138,7 @@ const loginUser = async (req, res) => {
         );
         const originalPassword = hashedPassword.toString(CryptoJs.enc.Utf8);
         if (originalPassword !== req.body.password) {
-            return res.status(401).json({ msg: "Invalid Username or Password" });
+            return res.status(401).json({ msg: "Invalid Password" });
         }
 
         // Fetch roleId for the payload role (ensure roleId exists)
@@ -132,6 +160,7 @@ const loginUser = async (req, res) => {
             { expiresIn: "5d" }
         );
         info.userRole = role.userRole;
+        // Removed adminEmail field from response per requirement
         // respond with consistent shape: { user, accessToken }
         res.status(200).json({ user: info, accessToken });
     } catch (error) {

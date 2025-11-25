@@ -31,7 +31,7 @@ exports.getDonationHistoryAggregate = async (req, res) => {
           let: { uid: '$userId' },
           pipeline: [
             { $match: { $expr: { $eq: ['$_id', { $toObjectId: '$$uid' }] } } },
-            { $project: { firstName:1, lastName:1, userName:1, email:1, phoneNumber:1, bloodGroup:1 } }
+            { $project: { firstName:1, lastName:1, email:1, phoneNumber:1, bloodGroup:1 } }
           ],
           as: 'user'
         }
@@ -113,7 +113,6 @@ exports.getDonationHistoryAggregate = async (req, res) => {
             _id: '$user._id',
             firstName: '$user.firstName',
             lastName: '$user.lastName',
-            userName: '$user.userName',
             email: '$user.email',
             phoneNumber: '$user.phoneNumber',
             bloodGroup: '$user.bloodGroup'
