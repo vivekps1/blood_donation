@@ -14,11 +14,7 @@ const UserSchema = mongoose.Schema({
     photo: { type: String },
     locationName: { type: String },
     locationGeo: {
-        type: {
-            type: String,
-            enum: ['Point'],
-            default: 'Point'
-        },
+        type: String,
         coordinates: { type: [Number], default: void 0 }
     },
     isActive:{type:Number, default:0}, 

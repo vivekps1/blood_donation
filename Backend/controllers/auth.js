@@ -16,7 +16,7 @@ const registerUser = async (req, res) => {
     const roleToUse = req.body.roleId !== undefined ? req.body.roleId : 1; // default to donor roleId = 1
 
     console.log("Registering user with roleId:", roleToUse);
-    console.log("Request body:", req.body.roleId );
+    console.log("Request body:", req.body );
 
     // Fetch roleId for the payload role (ensure roleId exists)
     const payloadRoleDoc = await Roles.findOne({ roleId: roleToUse });
@@ -101,18 +101,9 @@ const registerUser = async (req, res) => {
                 state: req.body.state || undefined,
                 country: req.body.country || undefined,
                 pincode: req.body.pincode || undefined,
+                locationGeo: req.body.locationGeo || undefined,
             };
-            if (req.body.locationGeo && req.body.locationGeo.type === 'Point' && Array.isArray(req.body.locationGeo.coordinates) && req.body.locationGeo.coordinates.length === 2) {
-                profilePayload.locationGeo = req.body.locationGeo;
-                if (req.body.locationName) profilePayload.locationName = req.body.locationName;
-            } else if (typeof req.body.latitude !== 'undefined' && typeof req.body.longitude !== 'undefined') {
-                // support legacy flat lat/lng fields
-                const lat = parseFloat(req.body.latitude);
-                const lng = parseFloat(req.body.longitude);
-                if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
-                    profilePayload.locationGeo = { type: 'Point', coordinates: [lng, lat] };
-                }
-            }
+
             // only create profile if we have some non-empty fields
             const hasProfileData = profilePayload.address || profilePayload.locationGeo;
             if (hasProfileData) {
@@ -121,7 +112,7 @@ const registerUser = async (req, res) => {
                 await newProfile.save();
             }
         } catch (e) {
-            console.warn('Failed to create initial user profile', e.message || e);
+            console.log('Failed to create initial user profile', e.message || e);
         }
 
         // create token and return sanitized user object
@@ -153,6 +144,7 @@ const registerUser = async (req, res) => {
                 console.log("env email:", process.env.ADMIN_EMAIL);
                 res.status(200).json({ user: info, accessToken });
     } catch (error) {
+        console.error("Error registering user:", error);
         res.status(500).json({ msg: error.message || error });
     }
 }
