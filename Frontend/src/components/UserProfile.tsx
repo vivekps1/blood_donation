@@ -3,6 +3,9 @@ import { updateUserProfile, uploadProfilePhoto } from '../utils/axios';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import MapPicker from './MapPicker';
 import { User, Phone, Mail, Camera, FileText, History, Edit2, Save, MapPin } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { parseApiError, type NormalisedError } from '../utils/apiError';
+import { ErrorBanner, FieldError } from './FormFeedback';
 
 interface UserData {
   id: string;
@@ -58,6 +61,8 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   const [showMap, setShowMap] = useState<boolean>(false);
   const [uploadingPhoto, setUploadingPhoto] = useState<boolean>(false);
   const [localPhotoPreview, setLocalPhotoPreview] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<NormalisedError | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // clear local preview when server photo is set or on unmount
   useEffect(() => {
@@ -110,9 +115,17 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           locationGeo: data.locationGeo ?? (typeof editData.latitude === 'number' && typeof editData.longitude === 'number' ? { type: 'Point', coordinates: [editData.longitude, editData.latitude]} : undefined),
         });
         setIsEditing(false);
+        setSaveError(null);
+        setFieldErrors({});
+        toast.success('Profile updated.');
       })
-      .catch(() => {
-        // Optionally show error
+      .catch((err: any) => {
+        // This was an empty catch with a "// Optionally show error" comment: a rejected
+        // profile save left the form open with no indication anything had gone wrong, and
+        // the user would keep pressing Save.
+        const parsed = parseApiError(err);
+        setSaveError(parsed);
+        setFieldErrors(parsed.fieldErrors);
       });
   };
 
@@ -139,10 +152,16 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           try { URL.revokeObjectURL(localPhotoPreview); } catch (e) { /*ignore*/ }
           setLocalPhotoPreview(null);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Photo upload failed', err);
-        // fall back to local preview
-        // local preview is already set
+        // Leaving the local preview in place made a failed upload look successful until
+        // the page was reloaded. Roll it back and say what happened.
+        if (localPhotoPreview) {
+          try { URL.revokeObjectURL(localPhotoPreview); } catch { /* ignore */ }
+        }
+        setLocalPhotoPreview(null);
+        onUpdate?.({ photo: user.photo || '' });
+        toast.error(parseApiError(err).message);
       } finally {
         setUploadingPhoto(false);
       }
@@ -169,6 +188,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   // console.log("Admin email (env):", adminEmail);
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
+      {/* Why the last save was refused. Previously this was an empty catch block. */}
+      <ErrorBanner error={saveError} onDismiss={() => setSaveError(null)} />
+
       {/* Profile Header */}
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <div className="flex items-center gap-6">
@@ -229,9 +251,14 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             {isEditing ? (
               <input
                 type="text"
+                id="firstName"
+                name="firstName"
                 value={editData.firstName}
                 onChange={(e) => setEditData({...editData, firstName: e.target.value})}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-invalid={Boolean(fieldErrors.firstName)}
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:border-transparent ${
+                  fieldErrors.firstName ? 'border-red-400 bg-red-50 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
@@ -239,15 +266,21 @@ export const UserProfile: React.FC<UserProfileProps> = ({
                 <span>{user.firstName}</span>
               </div>
             )}
+            <FieldError message={fieldErrors.firstName} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
             {isEditing ? (
               <input
                 type="text"
+                id="lastName"
+                name="lastName"
                 value={editData.lastName}
                 onChange={(e) => setEditData({...editData, lastName: e.target.value})}
-                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-invalid={Boolean(fieldErrors.lastName)}
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:border-transparent ${
+                  fieldErrors.lastName ? 'border-red-400 bg-red-50 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'
+                }`}
               />
             ) : (
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">

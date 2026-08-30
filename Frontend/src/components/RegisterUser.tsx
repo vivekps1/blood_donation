@@ -1,7 +1,10 @@
 import  React, { useState, useEffect } from 'react';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import MapPicker from './MapPicker';
-import { User, Mail, Lock, Phone, MapPin, Eye, EyeOff, Activity } from 'lucide-react';
+import { User, Mail, Lock, Phone, MapPin, Eye, EyeOff, Activity, Gift } from 'lucide-react';
+import { validateReferralCode } from '../utils/axios';
+import { parseApiError, type NormalisedError } from '../utils/apiError';
+import { ErrorBanner, FieldError, focusFirstError } from './FormFeedback';
 
 // Removed login data type since this component is registration-only.
 
@@ -25,16 +28,34 @@ interface RegisterData {
 export default function RegisterUser({
   onRegister,
   setShowRegister,
-  showRegister
+  showRegister,
+  referralCode
 }: {
   onRegister?: (data: RegisterData) => void;
   setShowRegister: (show: boolean) => void;
   showRegister: boolean;
+  /** Invitation code from a /register?ref=... link (synopsis 9.b.1). */
+  referralCode?: string | null;
 }) {
+  // Who invited this person, resolved from the code so the form can name them.
+  const [referrerName, setReferrerName] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [emailError, setEmailError] = useState('');
-  const [phoneError, setPhoneError] = useState('');
+  // One map for every field problem, whether raised locally or returned by the API, so
+  // client-side and server-side validation highlight inputs the same way.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<NormalisedError | null>(null);
+
+  const setFieldError = (field: string, message: string) =>
+    setFieldErrors(prev => ({ ...prev, [field]: message }));
+
+  const clearFieldError = (field: string) =>
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [pendingRegistration, setPendingRegistration] = useState<any>(null);
@@ -54,6 +75,14 @@ export default function RegisterUser({
     ,height: '', weight: '', dateOfBirth: ''
   });
   const [showMap, setShowMap] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!referralCode) return;
+    // A bad or expired code must not block registration — it just goes unattributed.
+    validateReferralCode(referralCode)
+      .then((r: any) => setReferrerName(r.data?.referrerName || null))
+      .catch(() => setReferrerName(null));
+  }, [referralCode]);
 
   const initialRegisterData: RegisterData = {
     firstName: '',
@@ -78,20 +107,32 @@ export default function RegisterUser({
 
   const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
+  // Swaps an input's border and background when that field has been flagged, so the
+  // problem is visible on the control itself and not only in the banner.
+  const errorStyle = (field: string) =>
+    fieldErrors[field]
+      ? 'border-red-400 bg-red-50 focus:ring-red-500'
+      : 'border-gray-300 focus:ring-red-500';
+
   // Login not used in this modal/flow; leaving registration only
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    setFormError(null);
+    setFieldErrors({});
+
     if (registerData.password !== registerData.confirmPassword) {
-      alert('Passwords do not match');
+      setFieldError('confirmPassword', 'The two passwords do not match');
+      focusFirstError({ confirmPassword: 'x' });
       return;
     }
     // Email format validation (allowed domains: .co, .com, .in, .net)
     const email = registerData.email || '';
     const emailValid = /^[^\s@]+@[^\s@]+\.(?:co|com|in|net)$/i.test(email);
     if (!emailValid) {
-      setEmailError('Enter a valid email');
+      setFieldError('email', 'Enter a valid email address');
+      focusFirstError({ email: 'x' });
       return;
     }
 
@@ -100,12 +141,14 @@ export default function RegisterUser({
     const cleanedPhone = rawPhone.replace(/\D/g, '');
     const phoneValid = /^\d{10}$/.test(cleanedPhone);
     if (!phoneValid) {
-      setPhoneError('Enter a valid 10-digit phone number');
+      setFieldError('phone', 'Enter a valid 10-digit phone number');
+      focusFirstError({ phone: 'x' });
       return;
     }
     // Validate age >= 18
     if (!registerData.dateOfBirth) {
-      alert('Please provide your date of birth');
+      setFieldError('dateOfBirth', 'Your date of birth is required');
+      focusFirstError({ dateOfBirth: 'x' });
       return;
     }
     const dob = new Date(registerData.dateOfBirth);
@@ -116,7 +159,8 @@ export default function RegisterUser({
       age--;
     }
     if (age < 18) {
-      alert('You must be at least 18 years old to register');
+      setFieldError('dateOfBirth', 'You must be at least 18 years old to donate blood');
+      focusFirstError({ dateOfBirth: 'x' });
       return;
     }
     // Map frontend fields to backend expected payload keys
@@ -136,7 +180,8 @@ export default function RegisterUser({
       bloodGroup: registerData.bloodType,
       height: registerData.height,
       weight: registerData.weight,
-      dateofBirth: registerData.dateOfBirth
+      dateofBirth: registerData.dateOfBirth,
+      referralCode: referralCode || undefined
     };
     
     // Store payload and show confirmation modal
@@ -151,18 +196,16 @@ export default function RegisterUser({
     
     try {
       await onRegister?.(pendingRegistration);
-      // Show success modal
       setShowSuccessModal(true);
     } catch (err: any) {
-      const data = err?.response?.data;
-      if (err?.response?.status === 409 && data?.fields) {
-        if (data.fields.email) setEmailError('Email already exists');
-        if (data.fields.phoneNumber) setPhoneError('Phone number already exists');
-        return;
-      }
-      // fallback
-      setEmailError('');
-      setPhoneError('');
+      // parseApiError maps the API's field names onto this form's input names, so a
+      // rejected bloodGroup highlights the "bloodType" select and a duplicate
+      // phoneNumber highlights the "phone" input. Previously anything that was not a
+      // 409 was swallowed and the user saw the form simply do nothing.
+      const parsed = parseApiError(err);
+      setFormError(parsed);
+      setFieldErrors(parsed.fieldErrors);
+      focusFirstError(parsed.fieldErrors);
     } finally {
       setPendingRegistration(null);
     }
@@ -172,11 +215,12 @@ export default function RegisterUser({
   const onEmailChange = (val: string) => {
     setRegisterData({ ...registerData, email: val });
     if (!val) {
-      setEmailError('');
+      clearFieldError('email');
       return;
     }
     const ok = /^[^\s@]+@[^\s@]+\.(?:co|com|in|net)$/i.test(val);
-    setEmailError(ok ? '' : 'Enter a valid email');
+    if (ok) clearFieldError('email');
+    else setFieldError('email', 'Enter a valid email address');
   };
 
   const onPhoneChange = (val: string) => {
@@ -184,11 +228,12 @@ export default function RegisterUser({
     const digits = val.replace(/\D/g, '').slice(0, 10);
     setRegisterData({ ...registerData, phone: digits });
     if (!digits) {
-      setPhoneError('');
+      clearFieldError('phone');
       return;
     }
     const ok = /^\d{10}$/.test(digits);
-    setPhoneError(ok ? '' : 'Enter a valid 10-digit phone number');
+    if (ok) clearFieldError('phone');
+    else setFieldError('phone', 'Enter a valid 10-digit phone number');
   };
 
   return (
@@ -201,6 +246,19 @@ export default function RegisterUser({
           <h1 className="text-2xl font-bold text-gray-900">Blood Bank</h1>
           <p className="text-gray-600">Save lives, donate blood</p>
         </div>
+
+        {/* Shown when the visitor arrived through an invitation link. */}
+        {referralCode && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start">
+            <Gift className="w-5 h-5 text-red-600 mr-2.5 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-900">
+              {referrerName
+                ? <>You were invited by <span className="font-medium">{referrerName}</span>.</>
+                : <>You are registering with invitation code <span className="font-mono font-medium">{referralCode}</span>.</>}
+              <span className="block text-xs text-red-700 mt-0.5">Thank you for joining the donor network.</span>
+            </p>
+          </div>
+        )}
 
         {/* Toggle Buttons */}
         <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
@@ -223,15 +281,19 @@ export default function RegisterUser({
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
+                    id="firstName"
+                    name="firstName"
                     type="text"
                     placeholder="First Name *"
                     value={registerData.firstName}
-                    onChange={(e) => setRegisterData({...registerData, firstName: e.target.value})}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    onChange={(e) => { setRegisterData({...registerData, firstName: e.target.value}); clearFieldError('firstName'); }}
+                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent ${errorStyle('firstName')}`}
+                    aria-invalid={Boolean(fieldErrors.firstName)}
                     autoComplete="given-name"
                     required
                   />
                 </div>
+                <FieldError message={fieldErrors.firstName} />
               </div>
               <div>
                 <div className="relative">
@@ -254,16 +316,19 @@ export default function RegisterUser({
                 <div className="relative h-12">
                   <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
+                    id="email"
+                    name="email"
                     type="email"
                     placeholder="Email *"
                     value={registerData.email}
                     onChange={(e) => onEmailChange(e.target.value)}
-                    className="w-full pl-10 pr-4 h-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    className={`w-full pl-10 pr-4 h-12 border rounded-lg focus:ring-2 focus:border-transparent ${errorStyle('email')}`}
+                    aria-invalid={Boolean(fieldErrors.email)}
                     autoComplete="email"
                     required
                   />
                 </div>
-                {emailError && <div className="text-sm text-red-600 mt-2">{emailError}</div>}
+                <FieldError message={fieldErrors.email} />
               </div>
             </div>
 
@@ -275,17 +340,20 @@ export default function RegisterUser({
                   <div className="relative flex-1">
                     <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
+                      id="phone"
+                      name="phone"
                       type="tel"
                       placeholder="10-digit number"
                       value={registerData.phone}
                       onChange={(e) => onPhoneChange(e.target.value)}
-                      className="w-full pl-10 pr-4 h-12 border border-l-0 border-gray-300 rounded-r-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      className={`w-full pl-10 pr-4 h-12 border border-l-0 rounded-r-lg focus:ring-2 focus:border-transparent ${errorStyle('phone')}`}
+                      aria-invalid={Boolean(fieldErrors.phone)}
                       autoComplete="tel"
                       required
                     />
                   </div>
                 </div>
-                {phoneError && <div className="text-sm text-red-600 mt-2">{phoneError}</div>}
+                <FieldError message={fieldErrors.phone} />
               </div>
             </div>
 
@@ -307,21 +375,30 @@ export default function RegisterUser({
                   <div className="w-full">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth <span className="text-red-600">*</span></label>
                     <input
+                      id="dateOfBirth"
+                      name="dateOfBirth"
                       type="date"
                       placeholder="Date of Birth"
                       value={registerData.dateOfBirth}
-                      onChange={(e) => setRegisterData({...registerData, dateOfBirth: e.target.value})}
-                      className="w-full h-12 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent appearance-none box-border leading-tight"
+                      onChange={(e) => { setRegisterData({...registerData, dateOfBirth: e.target.value}); clearFieldError('dateOfBirth'); }}
+                      className={`w-full h-12 px-3 border rounded-lg focus:ring-2 focus:border-transparent appearance-none box-border leading-tight ${errorStyle('dateOfBirth')}`}
+                      aria-invalid={Boolean(fieldErrors.dateOfBirth)}
                       required
                     />
+                    <FieldError message={fieldErrors.dateOfBirth} />
                   </div>
                 </div>
                 <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1 opacity-0">Blood Type</label>
                   <select
+                    id="bloodType"
+                    name="bloodType"
                     value={registerData.bloodType}
-                    onChange={(e) => setRegisterData({...registerData, bloodType: e.target.value})}
-                    className="w-full h-12 pl-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white appearance-none box-border"
+                    onChange={(e) => { setRegisterData({...registerData, bloodType: e.target.value}); clearFieldError('bloodType'); }}
+                    className={`w-full h-12 pl-3 pr-10 border rounded-lg focus:ring-2 focus:border-transparent appearance-none box-border ${
+                      fieldErrors.bloodType ? 'border-red-400 bg-red-50 focus:ring-red-500' : 'border-gray-300 bg-white focus:ring-red-500'
+                    }`}
+                    aria-invalid={Boolean(fieldErrors.bloodType)}
                     autoComplete="off"
                     required
                   >
@@ -331,6 +408,7 @@ export default function RegisterUser({
                     ))}
                   </select>
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">▾</span>
+                  <FieldError message={fieldErrors.bloodType} />
                 </div>
               </div>
 
@@ -369,11 +447,14 @@ export default function RegisterUser({
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
+                  id="password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Password *"
                   value={registerData.password}
-                  onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  onChange={(e) => { setRegisterData({...registerData, password: e.target.value}); clearFieldError('password'); }}
+                  className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:border-transparent ${errorStyle('password')}`}
+                  aria-invalid={Boolean(fieldErrors.password)}
                   autoComplete="new-password"
                   required
                 />
@@ -385,17 +466,25 @@ export default function RegisterUser({
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {/* The API enforces this policy too; stating it up front avoids a round trip. */}
+              <FieldError message={fieldErrors.password} />
+              {!fieldErrors.password && (
+                <p className="mt-1 text-xs text-gray-500">At least 8 characters, including a letter and a number.</p>
+              )}
             </div>
 
             <div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
+                  id="confirmPassword"
+                  name="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Confirm Password *"
                   value={registerData.confirmPassword}
-                  onChange={(e) => setRegisterData({...registerData, confirmPassword: e.target.value})}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  onChange={(e) => { setRegisterData({...registerData, confirmPassword: e.target.value}); clearFieldError('confirmPassword'); }}
+                  className={`w-full pl-10 pr-12 py-3 border rounded-lg focus:ring-2 focus:border-transparent ${errorStyle('confirmPassword')}`}
+                  aria-invalid={Boolean(fieldErrors.confirmPassword)}
                   autoComplete="new-password"
                   required
                 />
@@ -412,11 +501,14 @@ export default function RegisterUser({
               )}
             </div>
 
+            {/* Whatever the API rejected, shown in full above the button. */}
+            <ErrorBanner error={formError} onDismiss={() => setFormError(null)} />
+
             {
               (() => {
                 const requiredFilled = Boolean(registerData.firstName && registerData.phone && registerData.email && registerData.dateOfBirth && registerData.bloodType && registerData.password);
                 const passwordsMatch = registerData.password === registerData.confirmPassword;
-                const noFieldErrors = !emailError && !phoneError;
+                const noFieldErrors = Object.keys(fieldErrors).length === 0;
                 const isFormValid = requiredFilled && passwordsMatch && noFieldErrors;
                 return (
                   <button

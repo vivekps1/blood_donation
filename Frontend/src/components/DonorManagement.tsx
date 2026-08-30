@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Users, MapPin, Phone, Mail, Edit2, X, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Donor } from '../types';
-import { getAllDonors, getDonorsStats, updateDonor } from '../utils/axios';
+import { getAllDonors, getDonorsStats, updateDonor, createDonor, deleteDonor } from '../utils/axios';
+import PlacesAutocomplete from './PlacesAutocomplete';
+import toast from 'react-hot-toast';
+import { parseApiError, type NormalisedError } from '../utils/apiError';
+import { ErrorBanner } from './FormFeedback';
 
 interface DonationManagementProps {
   userRole: string;
@@ -26,8 +30,23 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   // Modal state for viewing/editing a donor
   const [selectedDonor, setSelectedDonor] = useState<Donor | null>(null);
   const [donorForm, setDonorForm] = useState<Partial<Donor> & { firstName?: string; lastName?: string; dateofBirth?: string }>({});
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState<any>({ firstName: '', lastName: '', email: '', phoneNumber: '', bloodGroup: '', dateofBirth: '', password: '', confirmPassword: '', address: '', latitude: null, longitude: null, locationName: '' , height: '', weight: '' });
+  const [creating, setCreating] = useState(false);
+  const [createErrors, setCreateErrors] = useState<Record<string,string>>({});
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showCreateConfirmPassword, setShowCreateConfirmPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modalErrors, setModalErrors] = useState<Record<string, string>>({});
+  // Sentence-level failures for each of the three surfaces on this page.
+  const [listError, setListError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<NormalisedError | null>(null);
+  const [createError, setCreateError] = useState<NormalisedError | null>(null);
+
+  // Applied to an input whose field has been flagged, so the problem shows on the control
+  // and not only as text beneath it.
+  const errorInput = (errors: Record<string, string>, field: string, base = 'mt-1 w-full border rounded px-3 py-2') =>
+    `${base} ${errors[field] ? 'border-red-400 bg-red-50 focus:ring-2 focus:ring-red-500' : 'border-gray-300'}`;
 
   const openDonorModal = (donor: Donor) => {
     setSelectedDonor(donor);
@@ -62,6 +81,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
   };
 
   const saveDonorEdits = async () => {
+    setModalError(null);
     if (!selectedDonor) return;
     setSaving(true);
     try {
@@ -113,14 +133,13 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       const updated: Partial<Donor> = resp.data as any;
       setDonors(prev => prev.map(d => d._id === selectedDonor._id ? { ...d, ...(updated as Partial<Donor>) } : d));
       closeDonorModal();
+      toast.success('Donor updated.');
     } catch (e: any) {
-      const data = e?.response?.data;
-      if (e?.response?.status === 409 && data?.fields) {
-        const newErrors: Record<string, string> = {};
-        if (data.fields.email) newErrors.email = 'Email already exists';
-        if (data.fields.phoneNumber) newErrors.phoneNumber = 'Phone number already exists';
-        setModalErrors(prev => ({ ...prev, ...newErrors }));
-      }
+      // Only a 409 was handled before, so a validation failure or a permission refusal
+      // left the dialog sitting there with no explanation at all.
+      const parsed = parseApiError(e);
+      setModalError(parsed);
+      setModalErrors(prev => ({ ...prev, ...parsed.fieldErrors }));
       setSaving(false);
     }
   };
@@ -142,7 +161,11 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         const data = response.data as { donors: Donor[]; totalPages?: number };
         setDonors(data.donors);
         setTotalPages(data.totalPages || 1);
-      } catch {
+        setListError(null);
+      } catch (e: any) {
+        // Swallowing this rendered an empty table, which is indistinguishable from
+        // "no donors match your filters".
+        setListError(parseApiError(e).message);
         setDonors([]);
       } finally {
         setLoading(false);
@@ -157,10 +180,12 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
       try {
         const donorStatsRes = await getDonorsStats();
         setDonorStats(donorStatsRes.data as { totalDonors: number; eligibleDonors: number; ineligibleDonors: number; totalSuccessDonations: number });
-      } catch {
+      } catch (e: any) {
+        // Statistics are supplementary — the donor list is still usable without them — so
+        // this is a toast rather than a blocking banner, but it is no longer silent.
         setDonorStats(null);
+        toast.error(`Donor statistics unavailable: ${parseApiError(e).message}`, { id: 'donor-stats' });
       }
-      // Removed donation stats fetching as per the requirement
     };
     fetchStats();
   }, []);
@@ -187,6 +212,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
 
   return (
   <div className="space-y-6">
+    <ErrorBanner error={listError} onDismiss={() => setListError(null)} />
+
     <div className="flex items-center justify-between">
       <h1 className="text-2xl font-bold text-gray-900 flex items-center">
         <Users className="w-7 h-7 text-blue-600 mr-3" />
@@ -414,11 +441,11 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
         paginatedDonors.map((donor) => {
           const totalDonations = donor.totalDonations ?? '-';
           const lastDonationDate = donor.lastDonationDate ? new Date(donor.lastDonationDate).toLocaleDateString() : 'N/A';
-          const eligibility = { status: donor.eligibility ?? 'N/A', message: donor.eligibility ?? 'N/A' };
+          const eligibility = { status: donor.eligibility ?? 'eligible', message: donor.eligibility ?? 'eligible' };
           const displayName = donor.name ? donor.name.replace(/\b(undefined|null)\b/gi, '').trim().replace(/\s+/g,' ') || '-' : '-';
           return (
             <div key={donor._id} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between">``
                 <div className="flex items-start space-x-4 flex-1">
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                     {displayName && displayName !== '-' ? displayName[0] : ''}
@@ -473,12 +500,29 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                 </div>
                 <div className="flex space-x-2">
                   {userRole === 'admin' && (
-                    <button
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"
-                      onClick={() => openDonorModal(donor)}
-                    >
-                      <Edit2 className="w-4 h-4" /> Edit Profile
-                    </button>
+                    <>
+                      <button
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-1"
+                        onClick={() => openDonorModal(donor)}
+                      >
+                        <Edit2 className="w-4 h-4" /> Edit Profile
+                      </button>
+                      <button
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm flex items-center gap-1"
+                        onClick={async () => {
+                          if (!confirm('Delete this donor and linked user? This will not remove donation history.')) return;
+                          try {
+                            await deleteDonor(donor._id);
+                            setDonors(prev => prev.filter(d => d._id !== donor._id));
+                            toast.success('Donor deleted. Their donation history is retained.');
+                          } catch (e: any) {
+                            toast.error(parseApiError(e).message);
+                          }
+                        }}
+                      >
+                        <X className="w-4 h-4" /> Delete
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -499,11 +543,14 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
             </button>
           </div>
           <div className="p-6 space-y-6">
+            {/* What the API objected to when saving this donor. */}
+            <ErrorBanner error={modalError} onDismiss={() => setModalError(null)} />
+
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700">First Name</label>
                 <input
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  aria-invalid={Boolean(modalErrors.firstName)} className={errorInput(modalErrors, 'firstName')}
                   value={donorForm.firstName || ''}
                   onChange={e => { handleDonorChange('firstName', e.target.value); setModalErrors(prev => ({ ...prev, firstName: '' })); }}
                 />
@@ -521,7 +568,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                 <label className="text-sm font-medium text-gray-700">Email</label>
                 <input
                   type="email"
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  aria-invalid={Boolean(modalErrors.email)} className={errorInput(modalErrors, 'email')}
                   value={donorForm.email || ''}
                   onChange={e => { handleDonorChange('email', e.target.value); setModalErrors(prev => ({ ...prev, email: '' })); }}
                 />
@@ -532,7 +579,8 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                 <div className="mt-1 flex w-full">
                   <span className="px-3 py-2 border rounded-l bg-gray-100 text-sm text-gray-700 select-none">+91</span>
                   <input
-                    className="flex-1 border border-l-0 rounded-r px-3 py-2"
+                    aria-invalid={Boolean(modalErrors.phoneNumber)}
+                    className={errorInput(modalErrors, 'phoneNumber', 'flex-1 border border-l-0 rounded-r px-3 py-2')}
                     placeholder="10-digit number"
                     value={donorForm.phoneNumber || ''}
                     onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0,10); handleDonorChange('phoneNumber', digits); setModalErrors(prev => ({ ...prev, phoneNumber: '' })); }}
@@ -543,7 +591,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
               <div>
                 <label className="text-sm font-medium text-gray-700">Blood Group</label>
                 <select
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  aria-invalid={Boolean(modalErrors.bloodGroup)} className={errorInput(modalErrors, 'bloodGroup')}
                   value={donorForm.bloodGroup || ''}
                   onChange={e => { handleDonorChange('bloodGroup', e.target.value); setModalErrors(prev => ({ ...prev, bloodGroup: '' })); }}
                 >
@@ -572,7 +620,7 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
                 <label className="text-sm font-medium text-gray-700">Date of Birth</label>
                 <input
                   type="date"
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  aria-invalid={Boolean(modalErrors.dateofBirth)} className={errorInput(modalErrors, 'dateofBirth')}
                   value={donorForm.dateofBirth || ''}
                   onChange={e => { handleDonorChange('dateofBirth', e.target.value); setModalErrors(prev => ({ ...prev, dateofBirth: '' })); }}
                 />
@@ -629,6 +677,171 @@ const DonorManagement: React.FC<DonationManagementProps> = ({ userRole }) => {
           </div>
         </div>
       </div>
+    )}
+
+    {userRole === 'admin' && (
+      <>
+        <div className="fixed bottom-6 right-6">
+          <button
+            onClick={() => {
+              setCreateForm({ firstName: '', lastName: '', email: '', phoneNumber: '', bloodGroup: '', dateofBirth: '', password: '', confirmPassword: '', address: '', latitude: null, longitude: null, locationName: '' , height: '', weight: '' });
+              setCreateErrors({});
+              setShowCreatePassword(false);
+              setShowCreateConfirmPassword(false);
+              setShowCreateModal(true);
+            }}
+            className="bg-green-600 text-white px-4 py-3 rounded-full shadow-lg hover:bg-green-700"
+          >New Donor</button>
+        </div>
+
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg relative">
+              <div className="flex items-center justify-between border-b px-6 py-4">
+                <h2 className="text-lg font-semibold">Create New Donor</h2>
+                <button onClick={() => { setShowCreateModal(false); setCreateForm({ firstName: '', lastName: '', email: '', phoneNumber: '', bloodGroup: '', dateofBirth: '' }); }} className="text-gray-500 hover:text-gray-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Hidden fields to reduce browser autofill on modal open */}
+                <input type="text" name="fake-username" autoComplete="username" style={{ display: 'none' }} />
+                <input type="password" name="fake-password" autoComplete="new-password" style={{ display: 'none' }} />
+                <ErrorBanner error={createError} onDismiss={() => setCreateError(null)} className="mb-4" />
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">First Name</label>
+                    <input id="firstName" name="firstName" autoComplete="off" aria-invalid={Boolean(createErrors.firstName)}
+                      className={errorInput(createErrors, 'firstName')}
+                      value={createForm.firstName} onChange={e => setCreateForm((p:any) => ({...p, firstName: e.target.value}))} />
+                    {createErrors.firstName && <div className="text-sm text-red-600">{createErrors.firstName}</div>}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Last Name</label>
+                    <input name="lastName" autoComplete="off" className="mt-1 w-full border rounded px-3 py-2" value={createForm.lastName} onChange={e => setCreateForm((p:any) => ({...p, lastName: e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Email</label>
+                    <input id="email" name="email" autoComplete="off" aria-invalid={Boolean(createErrors.email)} className={errorInput(createErrors, 'email')} value={createForm.email} onChange={e => setCreateForm((p:any) => ({...p, email: e.target.value}))} />
+                    {createErrors.email && <div className="text-sm text-red-600">{createErrors.email}</div>}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Phone</label>
+                    <input id="phoneNumber" name="phoneNumber" autoComplete="off" aria-invalid={Boolean(createErrors.phoneNumber)} className={errorInput(createErrors, 'phoneNumber')} value={createForm.phoneNumber} onChange={e => setCreateForm((p:any) => ({...p, phoneNumber: e.target.value.replace(/\D/g,'').slice(0,10)}))} />
+                    {createErrors.phoneNumber && <div className="text-sm text-red-600">{createErrors.phoneNumber}</div>}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Password</label>
+                    <div className="mt-1 relative">
+                      <input id="password" name="password" autoComplete="new-password" type={showCreatePassword ? 'text' : 'password'} aria-invalid={Boolean(createErrors.password)} className={errorInput(createErrors, 'password', 'w-full border rounded px-3 py-2')} value={createForm.password} onChange={e => setCreateForm((p:any) => ({...p, password: e.target.value}))} />
+                      <button type="button" onClick={() => setShowCreatePassword(s => !s)} className="absolute right-2 top-2 text-gray-500">{showCreatePassword ? 'Hide' : 'Show'}</button>
+                    </div>
+                    {createErrors.password && <div className="text-sm text-red-600">{createErrors.password}</div>}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Confirm Password</label>
+                    <div className="mt-1 relative">
+                      <input id="confirmPassword" name="confirmPassword" autoComplete="new-password" type={showCreateConfirmPassword ? 'text' : 'password'} aria-invalid={Boolean(createErrors.confirmPassword)} className={errorInput(createErrors, 'confirmPassword', 'w-full border rounded px-3 py-2')} value={createForm.confirmPassword} onChange={e => setCreateForm((p:any) => ({...p, confirmPassword: e.target.value}))} />
+                      <button type="button" onClick={() => setShowCreateConfirmPassword(s => !s)} className="absolute right-2 top-2 text-gray-500">{showCreateConfirmPassword ? 'Hide' : 'Show'}</button>
+                    </div>
+                    {createErrors.confirmPassword && <div className="text-sm text-red-600">{createErrors.confirmPassword}</div>}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Blood Group</label>
+                    <select id="bloodGroup" name="bloodGroup" aria-invalid={Boolean(createErrors.bloodGroup)}
+                      className={errorInput(createErrors, 'bloodGroup')}
+                      value={createForm.bloodGroup} onChange={e => setCreateForm((p:any) => ({...p, bloodGroup: e.target.value}))}>
+                      <option value="">Select</option>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Date of Birth</label>
+                    <input type="date" className="mt-1 w-full border rounded px-3 py-2" value={createForm.dateofBirth} onChange={e => setCreateForm((p:any) => ({...p, dateofBirth: e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Height (cm)</label>
+                    <input className="mt-1 w-full border rounded px-3 py-2" value={createForm.height} onChange={e => setCreateForm((p:any) => ({...p, height: e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Weight (kg)</label>
+                    <input className="mt-1 w-full border rounded px-3 py-2" value={createForm.weight} onChange={e => setCreateForm((p:any) => ({...p, weight: e.target.value}))} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-medium text-gray-700">Address</label>
+                    <div className="mt-1">
+                      <PlacesAutocomplete
+                        value={createForm.address}
+                        placeholder="Search location"
+                        className="w-full pl-3 pr-4 py-2 border border-gray-300 rounded-lg h-10"
+                        onSelect={({ address, name, lat, lng }) => setCreateForm((p:any) => ({ ...p, address: address || '', locationName: name || '', latitude: typeof lat === 'number' ? lat : null, longitude: typeof lng === 'number' ? lng : null }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-2 border-t">
+                  <button className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200" onClick={() => { setShowCreateModal(false); setCreateForm({ firstName: '', lastName: '', email: '', phoneNumber: '', bloodGroup: '', dateofBirth: '', password: '', confirmPassword: '', address: '', latitude: null, longitude: null, locationName: '' , height: '', weight: '' }); }}>Cancel</button>
+                  <button className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700" onClick={async () => {
+                    // basic validation
+                    const errs: Record<string,string> = {};
+                    if (!createForm.firstName) errs.firstName = 'First name required';
+                    if (!createForm.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createForm.email)) errs.email = 'Valid email required';
+                    const cleanedPhone = String(createForm.phoneNumber || '').replace(/\D/g,'');
+                    if (!cleanedPhone || !/\d{10}$/.test(cleanedPhone)) errs.phoneNumber = 'Valid 10-digit phone required';
+                    if (!createForm.password) errs.password = 'Password required';
+                    if (createForm.password !== createForm.confirmPassword) errs.confirmPassword = 'Passwords do not match';
+                    // Validate age >= 18 if dob provided
+                    if (createForm.dateofBirth) {
+                      const dob = new Date(createForm.dateofBirth);
+                      const today = new Date();
+                      let age = today.getFullYear() - dob.getFullYear();
+                      const m = today.getMonth() - dob.getMonth();
+                      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                      if (age < 18) errs.dateofBirth = 'Donor must be at least 18 years old';
+                    }
+                    if (Object.keys(errs).length) { setCreateErrors(errs); return; }
+                    setCreating(true);
+                    try {
+                      const payload: any = {
+                        firstName: createForm.firstName,
+                        lastName: createForm.lastName,
+                        email: createForm.email,
+                        password: createForm.password,
+                        phoneNumber: `+91${cleanedPhone}`,
+                        bloodGroup: createForm.bloodGroup,
+                        dateofBirth: createForm.dateofBirth,
+                        address: createForm.address,
+                        locationGeo: (createForm.latitude && createForm.longitude) ? { type: 'Point', coordinates: [createForm.longitude, createForm.latitude] } : undefined,
+                        locationName: createForm.locationName || undefined,
+                        height: createForm.height,
+                        weight: createForm.weight
+                      };
+                      const resp = await createDonor(payload);
+                      const respData: any = resp.data;
+                      // refresh list (prepend newly created donor)
+                      if (respData && respData.donor) setDonors(prev => [respData.donor, ...prev]);
+                      setShowCreateModal(false);
+                      setCreateForm({ firstName: '', lastName: '', email: '', phoneNumber: '', bloodGroup: '', dateofBirth: '', password: '', confirmPassword: '', address: '', latitude: null, longitude: null, locationName: '' , height: '', weight: '' });
+                      toast.success(
+                        respData?.plainPassword
+                          ? `Donor created. Temporary password: ${respData.plainPassword}`
+                          : 'Donor created.',
+                        // A one-time password needs long enough to be written down.
+                        { duration: respData?.plainPassword ? 15000 : 4000 }
+                      );
+                    } catch (e: any) {
+                      const parsed = parseApiError(e, { phoneNumber: 'phoneNumber', bloodGroup: 'bloodGroup' });
+                      setCreateError(parsed);
+                      setCreateErrors(parsed.fieldErrors);
+                    } finally { setCreating(false); }
+                  }}>{creating ? 'Creating...' : 'Create'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     )}
 
     {/* Pagination Controls (shown only when there is data and multiple pages) */}

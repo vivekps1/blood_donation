@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Cookies from 'js-cookie';
-import { loginUser, registerUser } from './utils/axios'; // Import the login and register APIs
+import toast from 'react-hot-toast';
+import { loginUser, registerUser, SESSION_EXPIRED_EVENT } from './utils/axios';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -11,6 +12,12 @@ import DonationHistory from './components/DonationHistory';
 import NotificationCenter from './components/NotificationCenter';
 import AuthWrapper from './components/AuthWrapper';
 import { HospitalManagement } from './components/HospitalManagement';
+import UserManagement from './components/UserManagement';
+import BloodInventory from './components/BloodInventory';
+import MedicalReports from './components/MedicalReports';
+import Reports from './components/Reports';
+import AccountSettings from './components/AccountSettings';
+import VerifyAccount from './components/VerifyAccount';
 
 export interface LoginProps {
   onLogin: (credentials: any) => Promise<boolean>;
@@ -25,6 +32,35 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  // Set when the API reports the account still needs its emailed/texted code entered
+  // (synopsis 9.b.1). Shown as a full-screen step immediately after registration and as a
+  // dismissible banner after a normal sign-in.
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationDismissed, setVerificationDismissed] = useState(false);
+
+  const persistUser = (userData: any) => {
+    setCurrentUser(userData);
+    Cookies.set('user', JSON.stringify(userData), { expires: 7 });
+  };
+
+  const signOut = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('token');
+    Cookies.remove('user');
+    setCurrentPage('dashboard');
+  };
+
+  // The axios interceptor raises this when the API rejects a call with 401 while a token
+  // was held — the session expired, or an administrator deactivated the account. Without
+  // it the user stays on a screen where every request silently fails.
+  useEffect(() => {
+    const handleExpiry = () => {
+      toast.error('Your session has ended. Please sign in again.', { id: 'session-expired' });
+      signOut();
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleExpiry);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleExpiry);
+  }, []);
 
   // Function to handle login using the API
   const handleLogin = async (credentials: any) => {
@@ -35,9 +71,10 @@ function App() {
     // token might be at top-level (respData.accessToken) or on the user object
     const token = userData.accessToken ?? respData.accessToken ?? respData.token ?? userData.token;
 
-    setCurrentUser(userData);
     if (token) localStorage.setItem('token', token);
-    Cookies.set('user', JSON.stringify(userData), { expires: 7 });
+    persistUser(userData);
+    setNeedsVerification(Boolean(respData.verificationRequired));
+    setVerificationDismissed(false);
     return true;
   };
 
@@ -48,10 +85,13 @@ function App() {
     const createdUser: any = respData.user ?? respData;
     const token = createdUser.accessToken ?? respData.accessToken ?? respData.token ?? createdUser.token;
 
-    setCurrentUser(createdUser);
-    setCurrentPage('users');
     if (token) localStorage.setItem('token', token);
-    Cookies.set('user', JSON.stringify(createdUser), { expires: 7 });
+    persistUser(createdUser);
+    setCurrentPage('dashboard');
+    // A freshly registered account always has a code waiting, so the verification step is
+    // shown before anything else.
+    setNeedsVerification(true);
+    setVerificationDismissed(false);
     return true;
   };
 
@@ -65,10 +105,40 @@ function App() {
     );
   }
 
+  const userRole = currentUser.userRole || currentUser.role || 'donor';
+  const userId = currentUser._id || currentUser.id;
+
+  // Straight after registration the verification step is the whole screen, so the code is
+  // entered while it is fresh. It can be deferred, after which it becomes a banner.
+  if (needsVerification && !verificationDismissed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4">
+        <VerifyAccount
+          email={currentUser.email}
+          onVerified={(updated) => {
+            setNeedsVerification(false);
+            if (updated) persistUser({ ...currentUser, ...updated });
+          }}
+          onSkip={() => setVerificationDismissed(true)}
+        />
+      </div>
+    );
+  }
+
   const renderContent = () => {
     switch (currentPage) {
       case 'hospital':
         return <HospitalManagement />;
+      case 'users':
+        return <UserManagement userRole={userRole} currentUserId={userId} />;
+      case 'inventory':
+        return <BloodInventory userRole={userRole} />;
+      case 'medicalreports':
+        return <MedicalReports userRole={userRole} userId={userId} />;
+      case 'reports':
+        return <Reports />;
+      case 'settings':
+        return <AccountSettings currentUser={currentUser} onUserUpdated={persistUser} />;
       case 'donors':
         return <DonorManagement userRole={currentUser.userRole} />;
       case 'requests':
@@ -151,6 +221,19 @@ function App() {
           onProfileClick={() => setCurrentPage('profile')}
         />
         <main className={`flex-1 overflow-x-hidden ${currentPage === 'profile' ? '' : 'overflow-y-auto'} bg-gray-50 p-6`}>
+          {needsVerification && verificationDismissed && (
+            <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+              <p className="text-sm text-amber-900">
+                Your account is not verified, so you cannot raise a request or volunteer to donate yet.
+              </p>
+              <button
+                onClick={() => setVerificationDismissed(false)}
+                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm whitespace-nowrap"
+              >
+                Enter code
+              </button>
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>
@@ -170,9 +253,7 @@ function App() {
               </button>
               <button
                 onClick={() => {
-                  setCurrentUser(null);
-                  localStorage.removeItem('token');
-                  Cookies.remove('user');
+                  signOut();
                   setShowLogoutModal(false);
                 }}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"

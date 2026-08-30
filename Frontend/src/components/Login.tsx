@@ -1,16 +1,33 @@
 import React, { useState } from 'react';
 import { Lock, User, Activity } from 'lucide-react';
+import { parseApiError, type NormalisedError } from '../utils/apiError';
+import { ErrorBanner, FieldError } from './FormFeedback';
 
 interface LoginProps {
   onLogin: (user: any) => void;
   setCurrentPage: (page: any) => void;
   setShowRegister: (show: boolean) => void;
   showRegister: boolean;
+  /** Opens the password recovery flow. */
+  onForgotPassword: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister, showRegister }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister, showRegister, onForgotPassword }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '', role: 'donor' });
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [error, setError] = useState<NormalisedError | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Which input to highlight for a given sign-in failure. The API deliberately does not
+  // say whether the address or the password was wrong — that would let anyone probe which
+  // emails are registered — so a rejected credential flags both.
+  const highlight = (): Record<string, boolean> => {
+    if (!error) return {};
+    if (error.fieldErrors.email || error.fieldErrors.password) {
+      return { email: Boolean(error.fieldErrors.email), password: Boolean(error.fieldErrors.password) };
+    }
+    if (error.status === 401) return { email: true, password: true };
+    return {};
+  };
 
   const userTypes = [
     { id: 'donor', name: 'Donor', icon: User },
@@ -19,26 +36,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
+    setError(null);
+    setSubmitting(true);
     try {
       await onLogin({ email: credentials.username, role: credentials.role, password: credentials.password });
     } catch (err: any) {
-      console.log('Login error caught:', err);
-      console.log('Error response:', err?.response);
-      console.log('Error response data:', err?.response?.data);
-      let msg = 'Login failed';
-      if (err && err.response && err.response.data) {
-        if (err.response.data.msg) {
-          msg = err.response.data.msg;
-        } else {
-          msg = typeof err.response.data === 'string' ? err.response.data : err.response.data.error || 'Login failed';
-        }
-      }
-      console.log('Final error message:', msg);
-      setErrorMsg(msg);
-      setTimeout(() => {
-        setErrorMsg(null);
-      }, 5000);
+      // The banner no longer disappears on a timer: a sign-in failure the user did not
+      // manage to read is a failure they cannot act on.
+      setError(parseApiError(err, { email: 'email', password: 'password' }));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -80,47 +87,71 @@ const Login: React.FC<LoginProps> = ({ onLogin, setCurrentPage, setShowRegister,
 
             <div>
               <input
-                type="text"
+                id="email"
+                name="email"
+                type="email"
                 placeholder="Email"
                 value={credentials.username}
-                onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                onChange={(e) => { setCredentials({ ...credentials, username: e.target.value }); setError(null); }}
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent ${
+                  highlight().email ? 'border-red-400 bg-red-50 focus:ring-red-500' : 'border-gray-300 focus:ring-red-500'
+                }`}
+                aria-invalid={Boolean(highlight().email)}
+                autoComplete="email"
                 required
               />
+              <FieldError message={error?.fieldErrors.email} />
             </div>
 
             <div>
               <input
                 type="password"
+                id="password"
+                name="password"
                 placeholder="Password"
                 value={credentials.password}
-                onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                onChange={(e) => { setCredentials({ ...credentials, password: e.target.value }); setError(null); }}
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent ${
+                  highlight().password ? 'border-red-400 bg-red-50 focus:ring-red-500' : 'border-gray-300 focus:ring-red-500'
+                }`}
+                aria-invalid={Boolean(highlight().password)}
+                autoComplete="current-password"
                 required
               />
+              <FieldError message={error?.fieldErrors.password} />
             </div>
 
-            {errorMsg && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
-                <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <span className="text-sm">{errorMsg}</span>
-              </div>
+            <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+            {/* A wrong-role sign-in is a common mistake with two role buttons on screen. */}
+            {error?.message?.includes("You're not") && (
+              <p className="text-sm text-gray-600 -mt-3">
+                Check the role selected above — an account can only sign in under its own role.
+              </p>
             )}
 
             <button
               type="submit"
-              className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 transition-colors font-medium"
+              disabled={submitting}
+              className="w-full bg-red-600 text-white py-3 px-4 rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Sign In
+              {submitting ? 'Signing in…' : 'Sign In'}
             </button>
-            <div className="text-center mt-4">
+            <div className="text-center mt-4 space-y-2">
               <button
-                className="text-red-600 underline"
+                type="button"
+                className="text-red-600 underline block w-full"
                 onClick={() => setShowRegister(!showRegister)}
               >
                 {showRegister ? 'Already have an account? Login' : "Don't have an account? Register"}
+              </button>
+              {/* type="button" matters here: inside a form, a bare button submits it. */}
+              <button
+                type="button"
+                className="text-sm text-gray-600 hover:text-gray-900 underline"
+                onClick={onForgotPassword}
+              >
+                Forgot your password?
               </button>
             </div>
           </form>

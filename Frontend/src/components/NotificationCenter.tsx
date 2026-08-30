@@ -1,8 +1,31 @@
 import  React, { useEffect, useState } from 'react';
 import Cookies from 'js-cookie';
 import { Bell, BellOff, Mail, Phone, Send, Check, Clock, AlertCircle } from 'lucide-react';
-import type { Notification } from '../types';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsReadForUser, createNotificationApi } from '../utils/axios';
+
+/**
+ * View model for one row of the notification list.
+ *
+ * The API's `Notification` (see ../types) is the wire shape; this screen renders a
+ * flattened, snake_case version of it. Typing the mapped objects as the wire shape was
+ * a lie the compiler flagged on every field access.
+ */
+interface NotificationView {
+  id: string;
+  user_id: string;
+  /** Delivery channel the backend recorded — 'Email' or 'SMS'. */
+  type: string;
+  /** Domain event that raised it — REQUEST_APPROVED, DONOR_MATCHED, ... */
+  category: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  data: Record<string, any>;
+}
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsReadForUser, createNotificationApi, getAllHospitals } from '../utils/axios';
+import toast from 'react-hot-toast';
+import { parseApiError } from '../utils/apiError';
+import { ErrorBanner } from './FormFeedback';
 
 interface NotificationCenterProps {
   currentUser: any;
@@ -12,7 +35,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
   const [activeTab, setActiveTab] = useState('received');
   const [notificationFilter, setNotificationFilter] = useState('all');
 
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<NotificationView[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,6 +46,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
     title: '',
     message: ''
   });
+  const [hospitals, setHospitals] = useState<any[]>([]);
   const userCookie = Cookies.get('user');
   const parsedUser = userCookie ? JSON.parse(userCookie) : null;
   const currentUserId = currentUser?._id || parsedUser?._id;
@@ -39,16 +63,20 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
   const items = (data.notifications || []).map((n: any) => ({
         id: n._id || n.notificationId || '',
         user_id: n.userId,
+        // `notificationType` is the delivery channel (Email/SMS); the event that raised
+        // the notification is `category`. Filtering on the former meant no category
+        // filter could ever match.
         type: n.notificationType || 'system',
-        title: n.title || (n.notificationType || '').replace('_', ' '),
+        category: n.category || '',
+        title: n.title || (n.category || '').replace(/_/g, ' '),
         message: n.message,
         is_read: !!n.isRead,
         created_at: n.sentAt || n.createdAt || new Date().toISOString(),
-        data: n.data || {}
-      } as Notification));
+        data: n.meta || n.data || {}
+      } as NotificationView));
       setNotifications(items);
     } catch (err: any) {
-      setError(err?.response?.data?.error || err.message || 'Failed to load notifications');
+      setError(parseApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -56,21 +84,62 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
 
   useEffect(() => {
     fetchNotifications();
+    // fetch verified hospitals for Send Notification tab
+    (async () => {
+      try {
+        const res: any = await getAllHospitals(1, 200, undefined, undefined, undefined, true);
+        const body = res && res.data ? res.data : res;
+        // Support multiple response shapes used across the app:
+        // - { hospitals: [...] }
+        // - { records: [...] }
+        // - array directly
+        if (body) {
+          if (Array.isArray(body)) {
+            setHospitals(body);
+          } else if (Array.isArray(body.hospitals)) {
+            setHospitals(body.hospitals);
+          } else if (Array.isArray(body.records)) {
+            setHospitals(body.records);
+          } else {
+            // attempt to coerce single object into array
+            setHospitals([]);
+          }
+        } else {
+          setHospitals([]);
+        }
+      } catch (e) {
+        console.warn('Failed to load hospitals for notifications', e);
+        setHospitals([]);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Category options are taken from the notifications actually on screen, so the list
+  // can never drift from the vocabulary the backend emits.
+  const availableCategories = Array.from(
+    new Set(notifications.map(n => n.category).filter(Boolean))
+  ).sort();
+
+  const categoryLabel = (category: string) =>
+    category.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
   const filteredNotifications = notifications.filter(notification => {
     if (notificationFilter === 'all') return true;
     if (notificationFilter === 'unread') return !notification.is_read;
-    return notification.type === notificationFilter;
+    return notification.category === notificationFilter;
   });
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'donation_request': return <AlertCircle className="w-5 h-5 text-red-500" />;
-      case 'eligibility': return <Check className="w-5 h-5 text-green-500" />;
-      default: return <Bell className="w-5 h-5 text-blue-500" />;
+  // Keyed on the event category emitted by Backend/utils/notify.js, not on the delivery
+  // channel — the previous keys ('donation_request', 'eligibility') matched nothing.
+  const getNotificationIcon = (category: string) => {
+    if (/^REQUEST_|^DONOR_MATCHED$|^LOW_INVENTORY$/.test(category)) {
+      return <AlertCircle className="w-5 h-5 text-red-500" />;
     }
+    if (/^DONOR_ELIGIBLE$|^DONATION_RECORDED$|^DONOR_VOLUNTEERED$/.test(category)) {
+      return <Check className="w-5 h-5 text-green-500" />;
+    }
+    return <Bell className="w-5 h-5 text-blue-500" />;
   };
 
   const handleSendNotification = () => {
@@ -82,15 +151,26 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
           message: newNotification.message,
           title: newNotification.title,
           userId: newNotification.recipients, // 'all' | 'donors' | 'eligible' | specific id
+          recipients: newNotification.recipients,
+          bloodType: newNotification.bloodType,
+          hospitalId: (newNotification as any).hospitalId || undefined,
           sentAt: new Date(),
           channel: newNotification.channel,
         };
-        await createNotificationApi(payload);
-        // refetch
+        const response: any = await createNotificationApi(payload);
         await fetchNotifications();
+        // The API reports how many people it actually reached and over which channels,
+        // which is the only way to tell a successful broadcast from one that matched
+        // nobody.
+        toast.success(
+          response.data?.createdCount
+            ? `Sent to ${response.data.createdCount} recipient(s) — ${response.data.audience}.`
+            : `No recipients matched (${response.data?.audience || 'empty audience'}).`,
+          { duration: 6000 }
+        );
         setNewNotification({ recipients: 'all', bloodType: 'all', channel: 'both', title: '', message: '' });
       } catch (err: any) {
-        setError(err?.response?.data?.error || err.message || 'Failed to send notification');
+        setError(parseApiError(err).message);
       }
     })();
   };
@@ -101,7 +181,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       await markNotificationAsRead(id);
     } catch (err: any) {
-      setError(err?.response?.data?.error || err.message || 'Failed to mark as read');
+      // The optimistic update above already flipped the badge, so put it back.
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: false } : n));
+      toast.error(parseApiError(err).message);
     }
   };
 
@@ -110,7 +192,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
       await markAllNotificationsAsReadForUser(currentUserId);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (err: any) {
-      setError(err?.response?.data?.error || err.message || 'Failed to mark all as read');
+      toast.error(parseApiError(err).message);
     }
   };
   console.log(currentUser.userRole)
@@ -164,9 +246,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
               >
                 <option value="all">All Notifications</option>
                 <option value="unread">Unread Only</option>
-                <option value="donation_request">Donation Requests</option>
-                <option value="eligibility">Eligibility Updates</option>
-                <option value="system">System Messages</option>
+                {availableCategories.map(category => (
+                  <option key={category} value={category}>{categoryLabel(category)}</option>
+                ))}
               </select>
               <button onClick={handleMarkAllAsRead} className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
                 Mark All as Read
@@ -195,7 +277,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
                 ))}
               </div>
             )}
-            {error && <div className="p-4 text-red-600">{error}</div>}
+            {error && <ErrorBanner error={error} onDismiss={() => setError(null)} className="m-4" />}
             {!loading && !error && filteredNotifications.length === 0 && (
               <div className="bg-white rounded-lg p-10 shadow-sm border border-gray-200 text-center">
                 <div className="mx-auto w-12 h-12 flex items-center justify-center rounded-full bg-purple-50 mb-3">
@@ -220,7 +302,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
               >
                 <div className="flex items-start space-x-4">
                   <div className="flex-shrink-0 mt-1">
-                    {getNotificationIcon(notification.type)}
+                    {getNotificationIcon(notification.category)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between">
@@ -234,12 +316,18 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
                             <Clock className="w-4 h-4 mr-1" />
                             {new Date(notification.created_at).toLocaleString()}
                           </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            notification.type === 'donation_request' ? 'bg-red-100 text-red-800' :
-                            notification.type === 'eligibility' ? 'bg-green-100 text-green-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {notification.type.replace('_', ' ')}
+                          {notification.category && (
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              /^REQUEST_|^DONOR_MATCHED$|^LOW_INVENTORY$/.test(notification.category) ? 'bg-red-100 text-red-800' :
+                              /^DONOR_ELIGIBLE$|^DONATION_RECORDED$|^DONOR_VOLUNTEERED$/.test(notification.category) ? 'bg-green-100 text-green-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}>
+                              {categoryLabel(notification.category)}
+                            </span>
+                          )}
+                          {/* Delivery channel, secondary to the event itself. */}
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            {notification.type}
                           </span>
                         </div>
                       </div>
@@ -302,16 +390,16 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ currentUser = {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Channel</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hospital</label>
                 <select
-                  value={newNotification.channel}
-                  onChange={(e) => setNewNotification({...newNotification, channel: e.target.value})}
+                  value={(newNotification as any).hospitalId || ''}
+                  onChange={(e) => setNewNotification((p:any) => ({...p, hospitalId: e.target.value}))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 >
-                  <option value="both">SMS + Email</option>
-                  <option value="sms">SMS Only</option>
-                  <option value="email">Email Only</option>
-                  <option value="app">In-App Only</option>
+                  <option value="">-- Select Hospital (optional) --</option>
+                  {hospitals.map(h => (
+                    <option key={h._id} value={h._id}>{h.hospitalName}{h.isVerified ? ' (verified)' : ''}</option>
+                  ))}
                 </select>
               </div>
             </div>
