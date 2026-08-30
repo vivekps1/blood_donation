@@ -1,27 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, verifyTokenAndAuthorization } = require('../middlewares/verifyToken');
-const {
-  createNotification,
-  getNotifications,
-  markAsRead,
-  markAllAsReadForUser,
-  deleteNotification,
-} = require('../controllers/notification');
+const controller = require('../controllers/notification');
+const { verifyToken } = require('../middlewares/verifyToken');
+const { requirePermission } = require('../middlewares/permissions');
 
-// Get notifications (supports query params: userId, isRead, type, page, size)
-router.get('/', verifyToken, getNotifications);
+router.use(verifyToken);
 
-// Create notification (admin only)
-router.post('/', verifyTokenAndAuthorization, createNotification);
+// Every signed-in user reads and manages their own inbox.
+router.get('/', controller.getNotifications);
+router.put('/:id/read', controller.markAsRead);
+router.put('/user/:userId/read-all', controller.markAllAsReadForUser);
 
-// Mark a single notification as read
-router.put('/:id/read', verifyToken, markAsRead);
+// Broadcasting and reporting need the generateNotifications permission.
+router.post('/', requirePermission('generateNotifications'), controller.createNotification);
+router.post('/audience-preview', requirePermission('generateNotifications'), controller.previewAudience);
+router.post('/eligibility-sweep', requirePermission('generateNotifications'), controller.runEligibilitySweep);
+router.get('/stats', requirePermission('generateNotifications'), controller.getNotificationStats);
 
-// Mark all notifications for a user as read (admin or the user)
-router.put('/user/:userId/read-all', verifyToken, markAllAsReadForUser);
-
-// Delete a notification (admin)
-router.delete('/:id', verifyTokenAndAuthorization, deleteNotification);
+router.delete('/:id', requirePermission('generateNotifications'), controller.deleteNotification);
 
 module.exports = router;

@@ -33,8 +33,10 @@ const upload = multer({
 // Get user profile by userId
 router.get('/:userId', verifyToken, userProfileController.getUserProfile);
 
-// Create user profile
-router.post('/', userProfileController.createUserProfile);
+// Create user profile.
+// This was the only unauthenticated route on the router, which let anyone create a
+// profile document against any userId.
+router.post('/', verifyToken, userProfileController.createUserProfile);
 
 // Update user profile
 router.put('/:userId', verifyToken, userProfileController.updateUserProfile);

@@ -1,0 +1,55 @@
+.
+├── app.js
+├── backend.txt
+├── controllers
+│   ├── auth.js
+│   ├── donationHistoryAggregate.js
+│   ├── donationHistory.js
+│   ├── donationRequest.js
+│   ├── donor.js
+│   ├── hospital.js
+│   ├── notification.js
+│   ├── prospect.js
+│   ├── role.js
+│   ├── stats.js
+│   └── userProfile.js
+├── .env
+├── index.js
+├── middlewares
+│   ├── upload.js
+│   └── verifyToken.js
+├── models
+│   ├── DonationHistory.js
+│   ├── DonationRequest.js
+│   ├── Donor.js
+│   ├── Hospital.js
+│   ├── MedicalReport.js
+│   ├── Notification.js
+│   ├── Prospect.js
+│   ├── Roles.js
+│   ├── User.js
+│   └── UserProfile.js
+├── package.json
+├── package-lock.json
+├── routes
+│   ├── auth.js
+│   ├── donationHistoryAggregate.js
+│   ├── donationHistory.js
+│   ├── donationRequest.js
+│   ├── donor.js
+│   ├── hospital.js
+│   ├── notification.js
+│   ├── role.js
+│   ├── stats.js
+│   └── userProfile.js
+├── uploads
+│   ├── medical-reports
+│   │   ├── 1764092159763-219945102-Medical Report - model 1.pdf
+│   │   ├── 1764092873723-339476201-Medical Report - 2.pdf
+│   │   ├── 1764092873848-874985109-Medical Report - model 1.pdf
+│   │   └── 1764093445664-70351720-Medical Report - model 1.pdf
+│   └── profile-pics
+└── utils
+    └── db.js
+
+9 directories, 44 files

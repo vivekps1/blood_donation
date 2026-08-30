@@ -14,7 +14,9 @@ const DonorSchema = mongoose.Schema({
     diseases: {type:String, default:"No"}, 
     age: {type:Number, require:true}, 
     bloodPressure:{type:Number, require:true}, 
-    status:{type:Number, default:0}
+    status:{type:Number, default:0},
+    eligibility: { type: String, enum: ['eligible', 'ineligible'], default: 'eligible' },
+    eligibilityUpdatedDate: { type: Date }
 }, { timestamps: true })
 
 module.exports = mongoose.model("Donor", DonorSchema) ;
