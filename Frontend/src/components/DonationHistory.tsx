@@ -1,6 +1,8 @@
 import  { useState, useEffect, useMemo } from 'react';
 import { Calendar, Filter, Download, Eye, RefreshCw } from 'lucide-react';
 import { getAllDonationRequests } from '../utils/axios';
+import { parseApiError } from '../utils/apiError';
+import { ErrorBanner } from './FormFeedback';
 
 interface DonationHistoryProps {
   userRole: 'admin' | 'hospital' | 'donor';
@@ -46,7 +48,7 @@ interface DonationRecord {
 export default function DonationHistory({  }: DonationHistoryProps) {
   const [records, setRecords] = useState<DonationRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [bloodFilter, setBloodFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -55,7 +57,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
   const [selectedRecord, setSelectedRecord] = useState<DonationRecord | null>(null);
 
   const fetchData = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(null);
     try {
       // request closed donation requests so backend returns records + summary
       const res = await getAllDonationRequests({ status: 'Completed' });
@@ -71,7 +73,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
         setSummary(null);
       }
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Failed to load donation history');
+      setError(parseApiError(e).message);
     } finally {
       setLoading(false);
     }
@@ -81,14 +83,44 @@ export default function DonationHistory({  }: DonationHistoryProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The date a record is filed under: when the donation was fulfilled if known, else
+  // the date the request was raised.
+  const recordDate = (r: DonationRecord): Date | null => {
+    const raw = r.fulfilledAt || r.requestDate || r.requiredDate;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
   const filtered = useMemo(() => {
+    // `from` starts at midnight and `to` ends at 23:59:59 so a single-day range still
+    // matches records filed during that day.
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const to = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
+
     return records.filter(r => {
-      const blood = r.bloodGroup;
-      if (bloodFilter !== 'all' && blood !== bloodFilter) return false;
-      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (bloodFilter !== 'all' && r.bloodGroup !== bloodFilter) return false;
+      // Statuses are stored uppercase (COMPLETED, CLOSED, ...); comparing them to the
+      // dropdown's values directly meant the status filter never matched anything.
+      if (statusFilter !== 'all'
+        && String(r.status || '').toUpperCase() !== statusFilter.toUpperCase()) return false;
+
+      if (from || to) {
+        const when = recordDate(r);
+        if (!when) return false;
+        if (from && when < from) return false;
+        if (to && when > to) return false;
+      }
       return true;
     });
-  }, [records, bloodFilter, statusFilter]);
+  }, [records, bloodFilter, statusFilter, dateFrom, dateTo]);
+
+  // Offer only the statuses actually present in the loaded records, so the dropdown
+  // cannot drift from the backend's vocabulary again.
+  const statusOptions = useMemo(
+    () => Array.from(new Set(records.map(r => String(r.status || '').toUpperCase()).filter(Boolean))).sort(),
+    [records]
+  );
 
   const maskId = (id: string | undefined): string => {
     if (!id) return '';
@@ -198,7 +230,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
           >
             <option value="all">All Statuses</option>
-            {['pending','completed','cancelled','failed'].map(s => <option key={s} value={s}>{s}</option>)}
+            {statusOptions.map(s => <option key={s} value={s}>{s.replace('_', ' ').toLowerCase()}</option>)}
           </select>
         </div>
         <button
@@ -233,7 +265,7 @@ export default function DonationHistory({  }: DonationHistoryProps) {
 
       {/* Donations Table */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        {error && <div className="p-4 text-sm text-red-600 bg-red-50 border-b border-red-200">{error}</div>}
+        {error && <ErrorBanner error={error} onDismiss={() => setError(null)} className="m-4" />}
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>

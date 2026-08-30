@@ -3,6 +3,9 @@ import PlacesAutocomplete from './PlacesAutocomplete';
 import { Plus, Edit2, Trash, Save, X, MapPin, Phone, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAllHospitals, createHospital, updateHospital, deleteHospital } from '../utils/axios';
 import { isValidEmail, isValidPhone, normalizePhone } from '../utils/validation';
+import toast from 'react-hot-toast';
+import { parseApiError, type NormalisedError } from '../utils/apiError';
+import { ErrorBanner, FieldError } from './FormFeedback';
 
 interface Hospital {
   _id: string;
@@ -40,6 +43,7 @@ export const HospitalManagement: React.FC = () => {
 
   useEffect(() => {
     const fetchHospitals = async () => {
+      setLoadError(null);
       setLoading(true);
       try {
         const isVerifiedParam = verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
@@ -62,8 +66,11 @@ export const HospitalManagement: React.FC = () => {
           setHospitals([]);
           setTotalPages(1);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error fetching hospitals:', err);
+        // Without this the list just rendered empty, which reads as "no hospitals exist"
+        // rather than "the request failed".
+        setLoadError(parseApiError(err).message);
         setHospitals([]);
         setTotalPages(1);
       }
@@ -82,6 +89,16 @@ export const HospitalManagement: React.FC = () => {
   const [emailError, setEmailError] = useState<string>('');
   const [phoneError, setPhoneError] = useState<string>('');
   const [nameError, setNameError] = useState<string>('');
+  // Whatever the API rejected on save, plus the fields it named.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<NormalisedError | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const fieldStyle = (field: string, localError?: string) =>
+    (fieldErrors[field] || localError)
+      ? 'border-red-400 bg-red-50 focus:ring-red-500'
+      : 'border-gray-300 focus:ring-red-500';
   const addPlaceRef = useRef<HTMLInputElement | null>(null);
   const editPlaceRef = useRef<HTMLInputElement | null>(null);
 
@@ -167,6 +184,9 @@ export const HospitalManagement: React.FC = () => {
   };
 
   const handleSave = async () => {
+    setSaveError(null);
+    setFieldErrors({});
+
     if (isAdding) {
       // Block save if validation errors or required fields missing
       const nameValidationError = validateHospitalName(editData.hospitalName || '');
@@ -175,8 +195,16 @@ export const HospitalManagement: React.FC = () => {
         return;
       }
       if (emailError || phoneError) return;
-      if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
-        alert('Please fill all required fields');
+      // Required-field checks now highlight the inputs instead of using an alert.
+      const missing: Record<string, string> = {};
+      if (!editData.hospitalName) missing.hospitalName = 'Hospital name is required';
+      if (!editData.phoneNumber) missing.phoneNumber = 'A contact number is required';
+      if (!editData.email) missing.email = 'A contact email is required';
+      if (!editData.address) missing.address = 'The hospital address is required';
+      if (!editData.pincode) missing.pincode = 'A pincode is required';
+      if (Object.keys(missing).length) {
+        setFieldErrors(missing);
+        setSaveError(null);
         return;
       }
       if (!isValidEmail(editData.email || '')) { setEmailError('Enter a valid email'); return; }
@@ -205,8 +233,15 @@ export const HospitalManagement: React.FC = () => {
           setHospitals(res.data);
           setTotalPages(1);
         }
-      } catch (err) {
-        console.error('Error creating hospital:', err);
+        toast.success(`${payload.hospitalName} added.`);
+      } catch (err: any) {
+        // A failed save used to fall through to setIsAdding(false) below, which closed
+        // the form and cleared it — so a rejected hospital looked like a saved one.
+        const parsed = parseApiError(err);
+        setSaveError(parsed);
+        setFieldErrors(parsed.fieldErrors);
+        setSaving(false);
+        return;
       }
       setIsAdding(false);
     } else if (isEditing) {
@@ -218,8 +253,15 @@ export const HospitalManagement: React.FC = () => {
           return;
         }
         if (emailError || phoneError) return;
-        if (!editData.hospitalName || !editData.phoneNumber || !editData.email || !editData.address || !editData.pincode) {
-          alert('Please fill all required fields');
+        const missingOnEdit: Record<string, string> = {};
+        if (!editData.hospitalName) missingOnEdit.hospitalName = 'Hospital name is required';
+        if (!editData.phoneNumber) missingOnEdit.phoneNumber = 'A contact number is required';
+        if (!editData.email) missingOnEdit.email = 'A contact email is required';
+        if (!editData.address) missingOnEdit.address = 'The hospital address is required';
+        if (!editData.pincode) missingOnEdit.pincode = 'A pincode is required';
+        if (Object.keys(missingOnEdit).length) {
+          setFieldErrors(missingOnEdit);
+          setSaveError(null);
           return;
         }
         if (!isValidEmail(editData.email || '')) { setEmailError('Enter a valid email'); return; }
@@ -238,8 +280,13 @@ export const HospitalManagement: React.FC = () => {
           setHospitals(res.data);
           setTotalPages(1);
         }
-      } catch (err) {
-        console.error('Error updating hospital:', err);
+        toast.success('Hospital updated.');
+      } catch (err: any) {
+        const parsed = parseApiError(err);
+        setSaveError(parsed);
+        setFieldErrors(parsed.fieldErrors);
+        setSaving(false);
+        return;
       }
       setIsEditing(null);
     }
@@ -305,6 +352,9 @@ export const HospitalManagement: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
+      {/* A failed list load previously rendered as an empty list. */}
+      <ErrorBanner error={loadError} onDismiss={() => setLoadError(null)} className="mb-6" />
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Hospital Management</h1>
         {hospitals.length > 0 && (
@@ -466,6 +516,10 @@ export const HospitalManagement: React.FC = () => {
                 <h2 className="text-xl font-semibold">Add New Hospital</h2>
                 <button onClick={handleCancel} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
               </div>
+
+              {/* The API's reason for refusing the save, with the named fields highlighted. */}
+              <ErrorBanner error={saveError} onDismiss={() => setSaveError(null)} className="mb-4" />
+
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Name *</label>
@@ -483,9 +537,13 @@ export const HospitalManagement: React.FC = () => {
                       const error = validateHospitalName(val);
                       setNameError(error);
                     }}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${nameError ? 'border-red-500' : ''}`}
+                    id="hospitalName"
+                    name="hospitalName"
+                    aria-invalid={Boolean(nameError || fieldErrors.hospitalName)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('hospitalName', nameError)}`}
                   />
                   {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
+                  <FieldError message={fieldErrors.hospitalName} />
                 </div>
                 <PlacesAutocomplete
                   value={editData.address as string}
@@ -506,10 +564,14 @@ export const HospitalManagement: React.FC = () => {
                         if (!digits) { setPhoneError(''); return; }
                         setPhoneError(isValidPhone(digits) ? '' : 'Enter a valid 10-digit phone number');
                       }}
-                      className={`flex-1 px-3 py-3 border border-l-0 rounded-r-lg focus:ring-2 focus:ring-blue-500 ${phoneError ? 'border-red-500' : ''}`}
+                      id="phoneNumber"
+                      name="phoneNumber"
+                      aria-invalid={Boolean(phoneError || fieldErrors.phoneNumber)}
+                      className={`flex-1 px-3 py-3 border border-l-0 rounded-r-lg focus:ring-2 ${fieldStyle('phoneNumber', phoneError)}`}
                     />
                   </div>
                   {phoneError && <p className="text-xs text-red-600 mt-1">{phoneError}</p>}
+                  <FieldError message={fieldErrors.phoneNumber} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
@@ -523,31 +585,44 @@ export const HospitalManagement: React.FC = () => {
                       if (!val) { setEmailError(''); return; }
                       setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
                     }}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
+                    id="email"
+                    name="email"
+                    aria-invalid={Boolean(emailError || fieldErrors.email)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('email', emailError)}`}
                   />
                   {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
+                  <FieldError message={fieldErrors.email} />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Reg No"
-                  value={editData.regNo || ''}
-                  onChange={(e) => setEditData({...editData, regNo: e.target.value})}
-                  className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Contact Name"
-                  value={editData.contactName || ''}
-                  onChange={(e) => setEditData({...editData, contactName: e.target.value})}
-                  className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Pincode"
-                  value={editData.pincode || ''}
-                  onChange={(e) => setEditData({...editData, pincode: e.target.value})}
-                  className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                <div>
+                  <input
+                    id="regNo" name="regNo" type="text" placeholder="Registration No *"
+                    value={editData.regNo || ''}
+                    onChange={(e) => setEditData({...editData, regNo: e.target.value})}
+                    aria-invalid={Boolean(fieldErrors.regNo)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('regNo')}`}
+                  />
+                  <FieldError message={fieldErrors.regNo} />
+                </div>
+                <div>
+                  <input
+                    id="contactName" name="contactName" type="text" placeholder="Contact Name *"
+                    value={editData.contactName || ''}
+                    onChange={(e) => setEditData({...editData, contactName: e.target.value})}
+                    aria-invalid={Boolean(fieldErrors.contactName)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('contactName')}`}
+                  />
+                  <FieldError message={fieldErrors.contactName} />
+                </div>
+                <div>
+                  <input
+                    id="pincode" name="pincode" type="text" placeholder="Pincode *"
+                    value={editData.pincode || ''}
+                    onChange={(e) => setEditData({...editData, pincode: e.target.value})}
+                    aria-invalid={Boolean(fieldErrors.pincode)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('pincode')}`}
+                  />
+                  <FieldError message={fieldErrors.pincode} />
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -662,6 +737,9 @@ export const HospitalManagement: React.FC = () => {
                 <h2 className="text-xl font-semibold">Edit Hospital</h2>
                 <button onClick={handleCancel} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
               </div>
+
+              <ErrorBanner error={saveError} onDismiss={() => setSaveError(null)} className="mb-4" />
+
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Name *</label>
@@ -679,9 +757,13 @@ export const HospitalManagement: React.FC = () => {
                       const error = validateHospitalName(val);
                       setNameError(error);
                     }}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${nameError ? 'border-red-500' : ''}`}
+                    id="hospitalName"
+                    name="hospitalName"
+                    aria-invalid={Boolean(nameError || fieldErrors.hospitalName)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('hospitalName', nameError)}`}
                   />
                   {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
+                  <FieldError message={fieldErrors.hospitalName} />
                 </div>
                 <PlacesAutocomplete value={editData.address as string} placeholder="Address" onSelect={({ address, lat, lng }) => setEditData({ ...editData, address: address, hospitalLocationGeo: (lat && lng) ? { type: 'Point', coordinates: [lng, lat] } : undefined })} />
                 <div>
@@ -715,9 +797,13 @@ export const HospitalManagement: React.FC = () => {
                       if (!val) { setEmailError(''); return; }
                       setEmailError(isValidEmail(val) ? '' : 'Enter a valid email');
                     }}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 ${emailError ? 'border-red-500' : ''}`}
+                    id="email"
+                    name="email"
+                    aria-invalid={Boolean(emailError || fieldErrors.email)}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 ${fieldStyle('email', emailError)}`}
                   />
                   {emailError && <p className="text-xs text-red-600 mt-1">{emailError}</p>}
+                  <FieldError message={fieldErrors.email} />
                 </div>
                 <input type="text" placeholder="Reg No" value={editData.regNo || ''} onChange={e => setEditData({...editData, regNo: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />
                 <input type="text" placeholder="Contact Name" value={editData.contactName || ''} onChange={e => setEditData({...editData, contactName: e.target.value})} className="p-3 border rounded-lg focus:ring-2 focus:ring-blue-500" />

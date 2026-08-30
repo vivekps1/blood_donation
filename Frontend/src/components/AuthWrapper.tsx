@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import RegisterUser from './RegisterUser';
 import Login from './Login';
+import ForgotPassword from './ForgotPassword';
 
 interface AuthWrapperProps {
   onLogin: (credentials: any) => Promise<boolean>;
@@ -8,41 +9,53 @@ interface AuthWrapperProps {
   setCurrentPage: React.Dispatch<React.SetStateAction<string>>;
 }
 
+type Screen = 'login' | 'register' | 'forgot';
+
 const AuthWrapper: React.FC<AuthWrapperProps> = ({ onLogin, onRegister, setCurrentPage }) => {
-  const [showRegister, setShowRegister] = useState(false);
+  const [screen, setScreen] = useState<Screen>('login');
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+
+  // Invitation links look like /register?ref=A1B2C3D4 (synopsis 9.b.1). Arriving on one
+  // opens the registration form with the code already filled in.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      setReferralCode(ref.toUpperCase());
+      setScreen('register');
+    }
+  }, []);
+
+  if (screen === 'forgot') {
+    return <ForgotPassword onBackToLogin={() => setScreen('login')} />;
+  }
+
+  if (screen === 'register') {
+    return (
+      <RegisterUser
+        onRegister={async (data) => {
+          // Rethrow so the form can map field errors onto its inputs.
+          await onRegister(data);
+          return true;
+        }}
+        setShowRegister={(show: boolean) => setScreen(show ? 'register' : 'login')}
+        showRegister
+        referralCode={referralCode}
+      />
+    );
+  }
 
   return (
-    <div className="relative">
-      {showRegister ? (
-        <RegisterUser
-          onRegister={async (data) => {
-            try {
-              const success = await onRegister(data);
-              if (success) setShowRegister(false);
-              return true;
-            } catch (err: any) {
-              throw err; // rethrow so child can set field errors
-            }
-          }}
-          setShowRegister={setShowRegister}
-          showRegister={showRegister}
-        />
-      ) : (
-        <Login
-          onLogin={async (credentials) => {
-            try {
-              const success = await onLogin(credentials);
-              if (success) setCurrentPage('dashboard');
-            } catch (err: any) {
-              throw err; // rethrow so Login component can handle error display
-            }
-          }}
-          setCurrentPage={setCurrentPage}
-          setShowRegister={setShowRegister}
-          showRegister={showRegister}
-        />
-      )}
-    </div>
+    <Login
+      onLogin={async (credentials) => {
+        const success = await onLogin(credentials);
+        if (success) setCurrentPage('dashboard');
+      }}
+      setCurrentPage={setCurrentPage}
+      setShowRegister={(show: boolean) => setScreen(show ? 'register' : 'login')}
+      showRegister={false}
+      onForgotPassword={() => setScreen('forgot')}
+    />
   );
 };
 

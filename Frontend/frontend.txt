@@ -1,0 +1,52 @@
+.
+├── dist
+│   └── assets
+├── .env
+├── eslint.config.js
+├── frontend.txt
+├── index.html
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── src
+│   ├── App.tsx
+│   ├── components
+│   │   ├── AuthWrapper.tsx
+│   │   ├── Dashboard.tsx
+│   │   ├── DatePicker.tsx
+│   │   ├── DonationHistory.tsx
+│   │   ├── DonationRequests.tsx
+│   │   ├── DonorFilterPopup.tsx
+│   │   ├── DonorManagement.tsx
+│   │   ├── Header.tsx
+│   │   ├── HospitalManagement.tsx
+│   │   ├── Login.tsx
+│   │   ├── MapPicker.tsx
+│   │   ├── NotificationCenter.tsx
+│   │   ├── PlacesAutocomplete.tsx
+│   │   ├── ProfilePage.tsx
+│   │   ├── RegisterUser.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── UserManagement.tsx
+│   │   └── UserProfile.tsx
+│   ├── index.css
+│   ├── main.tsx
+│   ├── types
+│   │   └── index.ts
+│   ├── utils
+│   │   ├── api.ts
+│   │   ├── axios.ts
+│   │   ├── validation_old.ts
+│   │   └── validation.ts
+│   └── vite-env.d.ts
+├── tailwind.config.js
+├── tsconfig.app.json
+├── tsconfig.json
+├── tsconfig.node.json
+├── .vite
+│   └── deps
+│       ├── _metadata.json
+│       └── package.json
+└── vite.config.ts
+
+9 directories, 41 files

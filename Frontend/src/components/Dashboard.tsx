@@ -2,6 +2,8 @@ import  React, { useEffect, useState } from 'react';
 import { Users, Activity, Database, Clock, AlertCircle } from 'lucide-react';
 import { getAllDonationRequests } from '../utils/axios';
 import { getSystemStats } from '../utils/axios';
+import { parseApiError } from '../utils/apiError';
+import { ErrorBanner } from './FormFeedback';
 
 interface DashboardProps {
   setCurrentPage?: React.Dispatch<React.SetStateAction<string>>;
@@ -35,7 +37,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage }) => {
       } catch (err: any) {
         console.error('Failed to load system stats', err);
         if (!mounted) return;
-        setError('Failed to load stats');
+        setError(parseApiError(err).message);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -46,6 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage }) => {
 
   const [recentRequests, setRecentRequests] = React.useState<any[]>([]);
   const [recentLoading, setRecentLoading] = React.useState<boolean>(true);
+  const [recentError, setRecentError] = React.useState<string | null>(null);
 
   const timeAgo = (dateStr: string | Date) => {
     const d = new Date(dateStr);
@@ -73,8 +76,10 @@ const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage }) => {
           return new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime();
         });
         setRecentRequests(sorted.slice(0, 5));
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load recent requests', err);
+        // Without this the panel rendered as "no recent requests", which is wrong.
+        if (mounted) setRecentError(parseApiError(err).message);
       } finally {
         if (mounted) setRecentLoading(false);
       }
@@ -85,6 +90,10 @@ const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage }) => {
 
   return (
     <div className="space-y-6">
+      {/* The statistics failure was captured but never rendered, so a failed load showed
+          zeroes — indistinguishable from a system with no data in it. */}
+      <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="text-sm text-gray-500">
@@ -140,6 +149,8 @@ const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage }) => {
           <div className="space-y-4">
             {recentLoading ? (
               <div className="text-sm text-gray-500">Loading recent requests...</div>
+            ) : recentError ? (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{recentError}</div>
             ) : recentRequests.length === 0 ? (
               <div className="text-sm text-gray-500">No recent donation requests.</div>
               ) : (
