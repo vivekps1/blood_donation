@@ -1,26 +1,32 @@
-const express = require("express") ; 
-const { createDonor, getAlldonors, updateDonor, deleteDonor, getOneDonor, getDonorsStats } = require("../controllers/donor");
-const { verifyTokenAndAuthorization, verifyToken } = require("../middlewares/verifyToken");
-const router = express.Router() ; 
+const express = require("express");
+const router = express.Router();
+const { createDonor, getAlldonors, updateDonor, deleteDonor, getOneDonor,
+        getDonorsStats, getDonorEligibility } = require("../controllers/donor");
+const { verifyToken } = require("../middlewares/verifyToken");
+const { requirePermission } = require("../middlewares/permissions");
+const { validateBody } = require("../middlewares/validate");
 
+router.use(verifyToken);
 
-// Add donor 
-router.post("/",verifyToken, createDonor) ; 
+// Literal paths first, so "/:id" does not capture them.
+// A donor may always check their own eligibility; the controller enforces that.
+router.get("/eligibility/:userId", getDonorEligibility);
+router.get("/stats", requirePermission('manageUsers', 'manageDonationRequests'), getDonorsStats);
 
-//Get All Donors 
-router.get("/",verifyTokenAndAuthorization, getAlldonors) ; 
+router.post("/", requirePermission('manageUsers'), validateBody({
+    name: ['required'],
+    email: ['required', 'email'],
+    phoneNumber: ['required', 'phone'],
+    bloodGroup: ['required', 'bloodGroup']
+}), createDonor);
 
-// Update Donors 
+router.get("/", requirePermission('manageUsers', 'manageDonationRequests'), getAlldonors);
 
-router.put("/:id",verifyToken, updateDonor) ;
+// A donor may update their own record; otherwise the manageUsers permission is required.
+router.put("/:id", validateBody({
+    email: ['email'], phoneNumber: ['phone'], bloodGroup: ['bloodGroup']
+}), updateDonor);
+router.delete("/:id", requirePermission('manageUsers'), deleteDonor);
+router.get("/:id", getOneDonor);
 
-//Delete Donors 
-router.delete("/:id", verifyToken, deleteDonor) ;
-
-//Donor stats 
-router.get("/stats", verifyTokenAndAuthorization, getDonorsStats) ;
-
-//Get one Donor 
-router.get("/:id",verifyToken, getOneDonor) ;
-
-module.exports= router
+module.exports = router;

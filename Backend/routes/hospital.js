@@ -1,29 +1,37 @@
-const express = require("express") ; 
-const { createHospital, getAllHospitals, updateHospital, deleteHospital, getOneHospital, getHospitalStats, getNearbyHospitals } = require("../controllers/hospital");
-const { verifyTokenAndAuthorization, verifyToken } = require("../middlewares/verifyToken");
-const router = express.Router() ; 
+const express = require("express");
+const router = express.Router();
+const { createHospital, getAllHospitals, updateHospital, deleteHospital,
+        getOneHospital, getHospitalStats, getNearbyHospitals } = require("../controllers/hospital");
+const { verifyToken } = require("../middlewares/verifyToken");
+const { requirePermission } = require("../middlewares/permissions");
+const { validateBody } = require("../middlewares/validate");
 
+router.use(verifyToken);
 
-// Add Hospital 
-router.post("/", verifyTokenAndAuthorization,createHospital) ; 
+// Literal paths are declared before "/:id". "/stats" was previously registered after it,
+// so a request for /stats was captured by the parameter route and answered with a cast
+// error rather than the statistics. It was also the only unauthenticated route on this
+// router.
+router.get("/stats", requirePermission('manageHospitals', 'viewReports'), getHospitalStats);
+router.get('/nearby', getNearbyHospitals);
 
-//Get All Hospitals 
-router.get("/", verifyToken, getAllHospitals) ; 
+router.get("/", getAllHospitals);
+router.get("/:id", getOneHospital);
 
-// Nearby hospitals (query: lat, lng, radius in meters)
-router.get('/nearby', verifyToken, getNearbyHospitals);
+router.post("/", requirePermission('manageHospitals'), validateBody({
+    hospitalName: ['required'],
+    regNo: ['required'],
+    contactName: ['required'],
+    email: ['required', 'email'],
+    phoneNumber: ['required', 'phone'],
+    address: ['required'],
+    pincode: ['required']
+}), createHospital);
 
-// Update Hospitals 
+router.put("/:id", requirePermission('manageHospitals'), validateBody({
+    email: ['email'], phoneNumber: ['phone']
+}), updateHospital);
 
-router.put("/:id", verifyTokenAndAuthorization, updateHospital) ;
+router.delete("/:id", requirePermission('manageHospitals'), deleteHospital);
 
-//Delete Hospitals 
-router.delete("/:id", verifyTokenAndAuthorization,deleteHospital) ;
-
-//Get one Hospital 
-router.get("/:id",verifyToken ,getOneHospital) ;
-
-//Hospital stats 
-router.get("/stats", getHospitalStats) ; 
-
-module.exports= router
+module.exports = router;

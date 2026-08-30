@@ -1,143 +1,224 @@
-const Donor = require("../models/Donor") ;
+const Donor = require("../models/Donor");
+const eligibility = require("../utils/eligibility");
+const { normalize } = require("../utils/bloodCompatibility");
 const DonationHistory = require("../models/DonationHistory");
 
 // Create Donor Functionality 
 
+const CryptoJs = require('crypto-js');
+const Roles = require('../models/Roles');
+const User = require('../models/User');
+
+// Create Donor Functionality
 const createDonor = async (req, res) => {
-  try {
-    const newDonor = new Donor(req.body);
-    const donor = await newDonor.save();
-    return res.status(201).json(donor); 
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
+    try {
+        // If request is made by admin (via donor management), create both User and Donor
+        const isAdmin = req.user && Number(req.user.roleId) === 0;
+
+        // Basic required fields validation
+        if (!req.body.email || !req.body.phoneNumber || !req.body.firstName || !req.body.lastName) {
+            return res.status(400).json({ message: 'Missing required fields: firstName, lastName, email, phoneNumber' });
+        }
+
+        // Check duplicates in User collection
+        const existingEmail = await User.findOne({ email: req.body.email }).lean();
+        const existingPhone = await User.findOne({ phoneNumber: req.body.phoneNumber }).lean();
+        if (existingEmail || existingPhone) {
+            const fields = {};
+            if (existingEmail) fields.email = true;
+            if (existingPhone) fields.phoneNumber = true;
+            return res.status(409).json({ code: 'DUPLICATE', msg: 'Email or phone number already exists', fields });
+        }
+
+        // Determine roleId for donor role
+        const donorRole = await Roles.findOne({ userRole: 'donor' });
+        const donorRoleId = donorRole ? donorRole.roleId : 1;
+
+        let createdUser = null;
+        let passwordPlain = null;
+        // Create user record for donor when admin creates donor
+        if (isAdmin) {
+            passwordPlain = req.body.password || Math.random().toString(36).slice(-8);
+            const newUser = new User({
+                firstName: req.body.firstName,
+                lastName: req.body.lastName,
+                email: req.body.email,
+                password: CryptoJs.AES.encrypt(passwordPlain, process.env.PASS).toString(),
+                phoneNumber: req.body.phoneNumber,
+                bloodGroup: req.body.bloodGroup || '',
+                dateofBirth: req.body.dateofBirth || undefined,
+                address: req.body.address || undefined,
+                height: req.body.height || undefined,
+                weight: req.body.weight || undefined,
+                roleId: donorRoleId,
+                isActive: 1
+            });
+            createdUser = await newUser.save();
+
+            // Create a UserProfile for the created user if profile data provided
+            try {
+                const profilePayload = {};
+                if (req.body.address) profilePayload.address = req.body.address;
+                if (req.body.city) profilePayload.city = req.body.city;
+                if (req.body.state) profilePayload.state = req.body.state;
+                if (req.body.country) profilePayload.country = req.body.country;
+                if (req.body.pincode) profilePayload.pincode = req.body.pincode;
+                if (req.body.latitude && req.body.longitude) {
+                    const lat = parseFloat(req.body.latitude);
+                    const lng = parseFloat(req.body.longitude);
+                    if (!Number.isNaN(lat) && !Number.isNaN(lng)) profilePayload.locationGeo = { type: 'Point', coordinates: [lng, lat] };
+                } else if (req.body.locationGeo && req.body.locationGeo.type === 'Point' && Array.isArray(req.body.locationGeo.coordinates) && req.body.locationGeo.coordinates.length === 2) {
+                    profilePayload.locationGeo = req.body.locationGeo;
+                }
+                if (Object.keys(profilePayload).length > 0) {
+                    const UserProfile = require('../models/UserProfile');
+                    await new UserProfile({ userId: createdUser._id, ...profilePayload }).save();
+                }
+            } catch (e) {
+                console.warn('Failed to create user profile for created donor user', e && e.message ? e.message : e);
+            }
+        }
+
+        // Build donor document
+        const age = req.body.dateofBirth ? Math.abs(new Date().getUTCFullYear() - new Date(req.body.dateofBirth).getUTCFullYear()) : (req.body.age || 0);
+        const donorData = {
+            userId: createdUser ? createdUser._id : (req.body.userId || undefined),
+            name: `${req.body.firstName} ${req.body.lastName}`.trim(),
+            email: req.body.email,
+            address: req.body.address || '',
+            phoneNumber: req.body.phoneNumber,
+            bloodGroup: req.body.bloodGroup || '',
+            height: req.body.height ? String(req.body.height) : '',
+            weight: req.body.weight ? String(req.body.weight) : '',
+            date: new Date().toISOString(),
+            dateofBirth: req.body.dateofBirth || null,
+            age: age || 0,
+            bloodPressure: req.body.bloodPressure || 0,
+            diseases: req.body.diseases || 'No',
+            status: req.body.status || 0
+        };
+
+        const newDonor = new Donor(donorData);
+        const donor = await newDonor.save();
+
+        // Return created user credentials to admin (password only if generated here)
+        const result = { donor };
+        if (createdUser) {
+            result.user = { _id: createdUser._id, email: createdUser.email };
+            // include plain password (generated or provided) so admin can share it securely
+            result.plainPassword = passwordPlain || null;
+        }
+
+        return res.status(201).json(result);
+    } catch (error) {
+        console.error('createDonor error', error);
+        return res.status(500).json({ error: error.message });
+    }
 }
 
 //Get all Donors 
 
-const getAlldonors = async (req, res) => {
+// GET /api/v1/donors
+//
+// Rewritten to use utils/eligibility. Three defects are fixed here:
+//  * Donation history was looked up with `userId: donor._id` — the Donor document's own
+//    id — but DonationHistory.userId holds the *User* id. The query never matched, so
+//    every donor reported zero donations and unconditional eligibility.
+//  * The waiting period was hard-coded to 180 days here and 30 days in the notification
+//    controller; the synopsis specifies three months. Both now read the same constant.
+//  * The eligibility filter compared against a field the mapping function never set, so
+//    it silently filtered on the stored flag instead of the computed status.
+//  * History was fetched one donor at a time (N+1); it is now a single aggregate.
+const getAlldonors = async (req, res, next) => {
     try {
-        // Get pagination and filter/sort params from query
-        let { page = 1, size = 10, sortField, sortOrder, search, bloodType, eligibility } = req.query;
-        page = parseInt(page);
-        size = parseInt(size);
+        let { page = 1, size = 10, sortField, sortOrder, search, bloodType, eligibility: eligibilityFilter } = req.query;
+        page = Math.max(1, parseInt(page, 10) || 1);
+        size = Math.min(100, Math.max(1, parseInt(size, 10) || 10));
 
-        // Build mongo query
         const mongoQuery = {};
         if (search) {
-            const re = new RegExp(String(search), 'i');
-            mongoQuery.$or = [{ name: re }, { email: re }];
+            // Escape regex metacharacters so a search term cannot alter the query.
+            const safe = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(safe, 'i');
+            mongoQuery.$or = [{ name: re }, { email: re }, { phoneNumber: re }];
         }
         if (bloodType && bloodType !== 'all') {
-            mongoQuery.bloodGroup = bloodType;
+            const group = normalize(bloodType);
+            if (!group) return res.status(400).json({ msg: `Unrecognised blood group: ${bloodType}` });
+            mongoQuery.bloodGroup = group;
         }
 
-        // Prepare sort
         let sortObj = { createdAt: -1 };
-        if (sortField) {
-            const order = sortOrder === 'asc' ? 1 : -1;
-            // Only allow sorting by specific fields to avoid injection
-            if (['name', 'bloodGroup', 'createdAt'].includes(sortField)) {
-                sortObj = { [sortField]: order };
-            }
+        if (sortField && ['name', 'bloodGroup', 'createdAt'].includes(sortField)) {
+            sortObj = { [sortField]: sortOrder === 'asc' ? 1 : -1 };
         }
 
-        // If eligibility filter is requested, we need to compute eligibility for all matching donors,
-        // filter them, then apply pagination on the filtered list.
-        if (eligibility && (eligibility === 'eligible' || eligibility === 'ineligible')) {
-            // fetch all matching donors first
-            const allMatching = await Donor.find(mongoQuery).sort(sortObj).lean();
+        // Decorate a page of donors with their donation statistics and computed eligibility.
+        const decorate = async (donors) => {
+            const userIds = donors.map(d => String(d.userId || d._id));
+            const [lastDates, stats] = await Promise.all([
+                eligibility.latestDonationDates(userIds),
+                DonationHistory.aggregate([
+                    { $match: { userId: { $in: userIds } } },
+                    { $sort: { donationDate: -1 } },
+                    { $group: {
+                        _id: '$userId',
+                        totalDonations: { $sum: { $cond: [{ $in: ['$status', eligibility.SUCCESSFUL_STATUSES] }, 1, 0] } },
+                        lastDonationDate: { $first: '$donationDate' },
+                        lastStatus: { $first: '$status' }
+                    } }
+                ])
+            ]);
+            const statsByUser = new Map(stats.map(s => [String(s._id), s]));
 
-            // compute stats and eligibility for each
-            const allWithStats = await Promise.all(allMatching.map(async (donor) => {
-                const history = await DonationHistory.find({ userId: donor._id }).sort({ donationDate: -1 });
-                const totalDonations = history.length;
-                let lastDonationDate = null;
-                let lastStatus = null;
-                let eligibilityStatus = "eligible";
-                if (history.length > 0) {
-                    lastDonationDate = history[0].donationDate || null;
-                    lastStatus = history[0].status || null;
-                    const latestSuccessEntry = history.find(h => h.status === "Success" && h.donationDate);
-                    if (latestSuccessEntry && latestSuccessEntry.donationDate) {
-                        const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-                        const latestSuccessDate = new Date(latestSuccessEntry.donationDate);
-                        const diffTime = nowIST.getTime() - latestSuccessDate.getTime();
-                        const diffDays = diffTime / (1000 * 3600 * 24);
-                        eligibilityStatus = diffDays >= 180 ? "eligible" : "ineligible";
-                    }
-                }
+            return donors.map(donor => {
+                const key = String(donor.userId || donor._id);
+                const stat = statsByUser.get(key) || {};
+                const verdict = eligibility.evaluateDonor(donor, lastDates.get(key) || null);
                 return {
                     ...donor,
-                    totalDonations,
-                    lastDonationDate,
-                    lastStatus,
-                    eligibility: eligibilityStatus
+                    totalDonations: stat.totalDonations || 0,
+                    lastDonationDate: stat.lastDonationDate || null,
+                    lastStatus: stat.lastStatus || null,
+                    eligibility: verdict.status,
+                    eligibilityReasons: verdict.reasons,
+                    nextEligibleDate: verdict.nextEligibleDate,
+                    daysUntilEligible: verdict.daysUntilEligible
                 };
-            }));
+            });
+        };
 
-            // filter by eligibility
-            const filtered = allWithStats.filter(d => d.eligibility === eligibility);
-            const total = filtered.length;
-            const totalPages = Math.ceil(total / size) || 1;
+        // Eligibility is computed rather than stored, so filtering by it means evaluating
+        // the whole matching set before paginating.
+        if (eligibilityFilter === 'eligible' || eligibilityFilter === 'ineligible') {
+            const all = await decorate(await Donor.find(mongoQuery).sort(sortObj).lean());
+            const filtered = all.filter(d => d.eligibility === eligibilityFilter);
             const start = (page - 1) * size;
-            const paged = filtered.slice(start, start + size);
-
-            return res.status(200).json({ donors: paged, total, page, size, totalPages });
+            return res.status(200).json({
+                donors: filtered.slice(start, start + size),
+                total: filtered.length,
+                page,
+                size,
+                totalPages: Math.ceil(filtered.length / size) || 1
+            });
         }
 
-        // No eligibility filter: use mongo pagination
         const total = await Donor.countDocuments(mongoQuery);
-        const donors = await Donor.find(mongoQuery)
-            .sort(sortObj)
-            .skip((page - 1) * size)
-            .limit(size)
-            .lean();
-
-        // For each donor, fetch donation stats
-        const donorsWithStats = await Promise.all(donors.map(async (donor) => {
-            const history = await DonationHistory.find({ userId: donor._id }).sort({ donationDate: -1 });
-            const totalDonations = history.length;
-            let lastDonationDate = null;
-            let lastStatus = null;
-            let eligibility = "eligible";
-            if (history.length > 0) {
-                lastDonationDate = history[0].donationDate || null;
-                lastStatus = history[0].status || null;
-                // Eligibility logic: last successful donation must be >= 30 days ago
-                const latestSuccessEntry = history.find(h => h.status === "Success" && h.donationDate);
-                if (latestSuccessEntry && latestSuccessEntry.donationDate) {
-                    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-                    const latestSuccessDate = new Date(latestSuccessEntry.donationDate);
-                    const diffTime = nowIST.getTime() - latestSuccessDate.getTime();
-                    const diffDays = diffTime / (1000 * 3600 * 24);
-                    eligibility = diffDays >= 180 ? "eligible" : "ineligible";
-                }
-            }
-            return {
-                ...donor,
-                totalDonations,
-                lastDonationDate,
-                lastStatus,
-                eligibility
-            };
-        }));
+        const donors = await Donor.find(mongoQuery).sort(sortObj)
+            .skip((page - 1) * size).limit(size).lean();
 
         res.status(200).json({
-            donors: donorsWithStats,
+            donors: await decorate(donors),
             total,
             page,
             size,
-            totalPages: Math.ceil(total / size)
+            totalPages: Math.ceil(total / size) || 1
         });
-    } catch (error) {
-        res.status(500).json({ msg: error.message || error });
-    }
+    } catch (error) { next(error); }
 }
 
 //Update Donor 
 
-const User = require('../models/User');
 
 const updateDonor = async (req, res) => {
     try {
@@ -178,7 +259,7 @@ const updateDonor = async (req, res) => {
                 userUpdate.firstName = parts[0];
                 userUpdate.lastName = parts.slice(1).join(' ') || '';
             }
-            ['email','address','phoneNumber','bloodGroup','height','weight','dateofBirth'].forEach(f => {
+            ['email', 'address', 'phoneNumber', 'bloodGroup', 'height', 'weight', 'dateofBirth'].forEach(f => {
                 if (req.body[f] !== undefined) userUpdate[f] = req.body[f];
             });
             if (req.body.dateofBirth) {
@@ -198,68 +279,115 @@ const updateDonor = async (req, res) => {
 //GET One Donor 
 
 const getOneDonor = async (req, res) => {
-    try{
-        const donor = await Donor.findById(req.params.id) ;
+    try {
+        const donor = await Donor.findById(req.params.id);
         if (!donor) {
             return res.status(404).json({ message: "Donor not found" });
         }
         res.status(200).json(donor)
-    }catch(error){
+    } catch (error) {
         res.status(500).json(error)
     }
 }
 
 //Delete Donor 
 
-const deleteDonor = async (req, res) =>{
-    try{
-        const donor = await Donor.findByIdAndDelete(req.params.id); 
+const deleteDonor = async (req, res) => {
+    try {
+        const donor = await Donor.findById(req.params.id);
         if (!donor) {
             return res.status(404).json({ message: "Donor not found" });
         }
-        res.status(200).json({"message" :"Deleted Donor successfully", donor });
-    }catch(error){
+
+        // If linked to a User, delete the User as well so donor cannot login
+        if (donor.userId) {
+            try {
+                await User.findByIdAndDelete(donor.userId);
+            } catch (e) {
+                console.warn('Failed to delete linked user for donor', e && e.message ? e.message : e);
+            }
+        }
+
+        // Delete donor record
+        await Donor.findByIdAndDelete(req.params.id);
+
+        // Note: donation history and other related records are intentionally preserved
+        res.status(200).json({ "message": "Deleted Donor and linked user successfully", donorId: req.params.id });
+    } catch (error) {
         res.status(500).json(error)
     }
 }
 
 //Stats 
-const getDonorsStats = async (req, res) => {
+// GET /api/v1/donors/stats
+// Eligibility counts for the Admin Dashboard, computed with the shared rules and two
+// aggregates rather than a query per donor.
+const getDonorsStats = async (req, res, next) => {
     try {
-        // Total donors
-        const totalDonors = await Donor.countDocuments();
-        // Eligible/ineligible donors based on eligibility logic
-        const allDonors = await Donor.find();
-        let eligibleDonors = 0;
-        let ineligibleDonors = 0;
-        for (const donor of allDonors) {
-            const history = await DonationHistory.find({ userId: donor._id }).sort({ donationDate: -1 });
-            let eligibility = "eligible";
-            if (history.length > 0) {
-                const latestSuccessEntry = history.find(h => h.status === "Success" && h.donationDate);
-                if (latestSuccessEntry && latestSuccessEntry.donationDate) {
-                    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-                    const latestSuccessDate = new Date(latestSuccessEntry.donationDate);
-                    const diffTime = nowIST.getTime() - latestSuccessDate.getTime();
-                    const diffDays = diffTime / (1000 * 3600 * 24);
-                    eligibility = diffDays >= 180 ? "eligible" : "ineligible";
-                }
-            }
-            if (eligibility === "eligible") eligibleDonors++;
-            else ineligibleDonors++;
-        }
-        // Total successful donations
-        const totalSuccessDonations = await DonationHistory.countDocuments({ status: "Success" });
+        const donors = await Donor.find().lean();
+        const evaluated = await eligibility.evaluateDonors(donors);
+
+        const eligibleDonors = evaluated.filter(e => e.eligible).length;
+
+        // Why the ineligible donors are blocked, so the dashboard can show the breakdown.
+        const blockedBy = { waitingPeriod: 0, medical: 0, ageOrWeight: 0 };
+        evaluated.filter(e => !e.eligible).forEach(e => {
+            if (e.daysUntilEligible > 0) blockedBy.waitingPeriod++;
+            else if (e.reasons.some(r => /medical|condition/i.test(r))) blockedBy.medical++;
+            else blockedBy.ageOrWeight++;
+        });
+
+        const byBloodGroup = donors.reduce((acc, d) => {
+            const group = normalize(d.bloodGroup) || 'unknown';
+            acc[group] = (acc[group] || 0) + 1;
+            return acc;
+        }, {});
+
+        const totalSuccessDonations = await DonationHistory.countDocuments({
+            status: { $in: eligibility.SUCCESSFUL_STATUSES }
+        });
 
         res.status(200).json({
-            totalDonors,
+            totalDonors: donors.length,
             eligibleDonors,
-            ineligibleDonors,
-            totalSuccessDonations
+            ineligibleDonors: donors.length - eligibleDonors,
+            blockedBy,
+            byBloodGroup,
+            totalSuccessDonations,
+            waitingPeriodDays: eligibility.MIN_DAYS_BETWEEN_DONATIONS
         });
-    } catch (error) {
-        res.status(500).json({ msg: error.message || error });
-    }
+    } catch (error) { next(error); }
 }
 
-module.exports = {deleteDonor, getOneDonor, getAlldonors,getDonorsStats,updateDonor, createDonor}
+module.exports = { deleteDonor, getOneDonor, getAlldonors, getDonorsStats, updateDonor, createDonor }
+// GET /api/v1/donors/eligibility/:userId
+// Full eligibility verdict for one donor, including why they are blocked and when they
+// become eligible again. Donors may read their own; administrators may read anyone's.
+const getDonorEligibility = async (req, res, next) => {
+    try {
+        const userId = req.params.userId === 'me' ? String(req.user.userId) : String(req.params.userId);
+        const isAdmin = String((req.user || {}).roleId) === '0';
+        if (!isAdmin && userId !== String(req.user.userId)) {
+            return res.status(403).json({ msg: 'You may only view your own eligibility' });
+        }
+
+        const donor = await Donor.findOne({ userId }).lean();
+        if (!donor) return res.status(404).json({ msg: 'No donor record found for this user' });
+
+        const lastDates = await eligibility.latestDonationDates([userId]);
+        const verdict = eligibility.evaluateDonor(donor, lastDates.get(userId) || null);
+        const totalDonations = await DonationHistory.countDocuments({
+            userId, status: { $in: eligibility.SUCCESSFUL_STATUSES }
+        });
+
+        res.status(200).json({
+            userId,
+            bloodGroup: donor.bloodGroup,
+            totalDonations,
+            waitingPeriodDays: eligibility.MIN_DAYS_BETWEEN_DONATIONS,
+            ...verdict
+        });
+    } catch (error) { next(error); }
+};
+
+module.exports.getDonorEligibility = getDonorEligibility;

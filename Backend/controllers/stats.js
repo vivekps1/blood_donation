@@ -1,35 +1,65 @@
+// System-wide statistics for the Admin Dashboard.
+
 const Donor = require("../models/Donor");
 const Hospital = require("../models/Hospital");
 const DonationRequest = require("../models/DonationRequest");
+const DonationHistory = require("../models/DonationHistory");
+const BloodInventory = require("../models/BloodInventory");
+const Notification = require("../models/Notification");
+const User = require("../models/User");
+const eligibility = require("../utils/eligibility");
 
-// Return simple system-wide statistics (counts and sums).
-const getSystemStats = async (req, res) => {
+const getSystemStats = async (req, res, next) => {
   try {
-    const totalDonors = await Donor.countDocuments();
-    const totalHospitals = await Hospital.countDocuments();
-    const totalRequests = await DonationRequest.countDocuments();
+    const [
+      totalDonors, totalHospitals, totalRequests, totalUsers,
+      unitsAgg, statusCounts, donationAgg, stock, unreadForMe
+    ] = await Promise.all([
+      Donor.countDocuments(),
+      Hospital.countDocuments(),
+      DonationRequest.countDocuments(),
+      User.countDocuments({ isActive: { $ne: false } }),
 
-    // Sum of requested blood units across all donation requests
-    const unitsAgg = await DonationRequest.aggregate([
-      { $match: { bloodUnitsCount: { $exists: true } } },
-      { $group: { _id: null, totalUnitsRequested: { $sum: "$bloodUnitsCount" } } }
+      DonationRequest.aggregate([
+        { $group: { _id: null, totalUnitsRequested: { $sum: "$bloodUnitsCount" }, totalUnitsFulfilled: { $sum: "$unitsFulfilled" } } }
+      ]),
+      DonationRequest.aggregate([
+        { $group: { _id: { $toUpper: "$status" }, count: { $sum: 1 } } }
+      ]),
+      // Successful donations are counted from donation history, which is the record of
+      // what actually happened. The previous implementation counted *requests* with a
+      // completed status and reported that as "successful donations", which conflated a
+      // fulfilled request with the donations that fulfilled it.
+      DonationHistory.aggregate([
+        { $match: { status: { $in: eligibility.SUCCESSFUL_STATUSES } } },
+        { $group: { _id: null, count: { $sum: 1 }, units: { $sum: "$donatedUnits" } } }
+      ]),
+      BloodInventory.find().lean(),
+      req.user ? Notification.countDocuments({ userId: String(req.user.userId), isRead: false }) : 0
     ]);
-    const totalUnitsRequested = (unitsAgg && unitsAgg[0] && unitsAgg[0].totalUnitsRequested) || 0;
 
-    // Total successful donations — count history entries with status 'Completed' (case-insensitive)
-    const totalSuccessfulDonations = await DonationRequest.countDocuments({ status: { $regex: /^completed$/i } });
+    const units = unitsAgg[0] || {};
+    const donations = donationAgg[0] || {};
+    const byStatus = statusCounts.reduce((acc, s) => { acc[s._id || 'UNKNOWN'] = s.count; return acc; }, {});
 
     return res.status(200).json({
+      totalUsers,
       totalDonors,
       totalHospitals,
       totalRequests,
-      totalUnitsRequested,
-      totalSuccessfulDonations
+      totalUnitsRequested: units.totalUnitsRequested || 0,
+      totalUnitsFulfilled: units.totalUnitsFulfilled || 0,
+      totalSuccessfulDonations: donations.count || 0,
+      totalUnitsCollected: donations.units || 0,
+      requestsByStatus: byStatus,
+      pendingApprovals: byStatus.PENDING || 0,
+      inventory: {
+        totalUnits: stock.reduce((n, s) => n + (s.unitsAvailable || 0), 0),
+        lowStockLines: stock.filter(s => (s.unitsAvailable || 0) <= (s.reorderThreshold || 0)).length
+      },
+      unreadNotifications: unreadForMe
     });
-  } catch (error) {
-    console.error('Failed to compute system stats', error);
-    return res.status(500).json({ message: error.message || 'Internal server error' });
-  }
+  } catch (error) { next(error); }
 };
 
 module.exports = { getSystemStats };
